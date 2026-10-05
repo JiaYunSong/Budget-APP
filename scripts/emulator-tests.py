@@ -18,6 +18,9 @@ device = AdbDeviceTcp("127.0.0.1", args.port, default_transport_timeout_s=180)
 device.connect()
 assert device.shell("getprop ro.kernel.qemu").strip() == "1", "Only run on an emulator"
 assert device.shell("getprop sys.boot_completed").strip() == "1", "Emulator has not finished booting"
+# --reset explicitly allows clearing this dedicated emulator. Remove an installed
+# Release first, otherwise its different signing certificate prevents Debug install.
+device.shell("pm uninstall com.local.deposittracker", transport_timeout_s=180, read_timeout_s=180)
 for apk, remote in [(repo / "app/build/outputs/apk/debug/app-debug.apk", "/data/local/tmp/cunqi.apk"),
     (repo / "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk", "/data/local/tmp/cunqi-test.apk")]:
     print("Installing", apk.name, flush=True)
