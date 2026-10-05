@@ -12,4 +12,3 @@ Activity: com.local.deposittracker/.MainActivity
 TotalTime: 7541
 WaitTime: 7635
 Complete
-
