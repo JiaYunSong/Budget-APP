@@ -95,9 +95,9 @@ class EngineTest {
         val after = Engine.settle(s, date)
         assertEquals("待处理余额", after.accounts.single().name); assertEquals(5_100_000L, after.accounts.single().balance)
     }
-    @Test fun deletingRulePreservesHistory() {
+    @Test fun deletingRuleReversesGeneratedContributions() {
         val s = Engine.settle(state(0).copy(monthlyRules = listOf(rule())), date)
-        val after = Engine.deleteRule(s, "r"); assertEquals(s.transactions, after.transactions); assertEquals(s.accounts, after.accounts)
+        val after = Engine.deleteRule(s, "r"); assertTrue(after.transactions.isEmpty()); assertEquals(0L, after.cash()); assertTrue(after.monthlyRules.isEmpty())
     }
     @Test fun excludedAccountAlsoExcludesItsDeposits() {
         val s = Engine.createDeposit(state().copy(accounts = state().accounts.map { it.copy(includeInTotal = false) }), deposit(), currentDate = date)
@@ -168,10 +168,53 @@ class EngineTest {
     }
     @Test fun calendarDoesNotDoubleCountExecutedRules() {
         val s = Engine.settle(state(0).copy(monthlyRules = listOf(rule())), LocalDate.parse("2026-10-20"))
-        val events = s.events(YearMonth.of(2026, 10)); assertEquals(1, events.size); assertFalse(events.single().forecast)
-        assertTrue(s.events(YearMonth.of(2026, 11)).single().forecast)
+        val events = s.events(YearMonth.of(2026, 10), LocalDate.parse("2026-10-20")); assertEquals(1, events.size); assertFalse(events.single().forecast)
+        assertTrue(s.events(YearMonth.of(2026, 11), LocalDate.parse("2026-10-20")).isEmpty())
     }
     @Test fun amountsRejectFloatingPrecisionAndOverflow() {
         assertEquals(123456L, money("1234.56")); throws { money("1.001") }; throws { money("10000000000000") }
+    }
+
+    @Test fun deletedMonthlyOccurrenceNeverReturns() {
+        val s = Engine.settle(state(0).copy(monthlyRules = listOf(rule())), date)
+        val after = Engine.deleteTransaction(s, s.transactions.first().id)
+        assertEquals(600_000L, after.cash())
+        assertEquals(after, Engine.settle(after, date))
+        val later = Engine.settle(after, LocalDate.parse("2026-11-20"))
+        assertEquals(1_200_000L, later.cash())
+        assertFalse(later.transactions.any { it.id == s.transactions.first().id })
+    }
+    @Test fun deletingSpentRuleReportsAccurateNegativeBalance() {
+        val s = Engine.settle(state(0).copy(monthlyRules = listOf(rule())), date)
+        val spent = Engine.change(s, "a", -900_000, "MANUAL_EXPENSE", "2026-10-01", "")
+        val after = Engine.deleteRule(spent, "r")
+        assertEquals(-900_000L, after.cash()); assertEquals(1, after.transactions.size)
+    }
+    @Test fun transferDeletionReversesBothAccounts() {
+        val s = Engine.transfer(state(), "a", "b", 300_000, "2026-01-01", "")
+        val after = Engine.deleteTransaction(s, s.transactions.first().id)
+        assertEquals(state().accounts.map { it.balance }, after.accounts.map { it.balance })
+        assertTrue(after.transactions.isEmpty())
+    }
+    @Test fun deletingInvestmentReversesMaturityAndDescendants() {
+        val settled = Engine.createDeposit(state(), yearly(), currentDate = date)
+        val next = deposit().copy(id = "next", parentDepositId = "d", principal = 5_100_000)
+        val rolled = Engine.createDeposit(settled, next, currentDate = date)
+        val after = Engine.deleteTransaction(rolled, rolled.transactions.first().id)
+        assertTrue(after.deposits.isEmpty()); assertTrue(after.transactions.isEmpty())
+        assertEquals(10_000_000L, after.cash())
+    }
+    @Test fun fixedIncomeRulesAndAccountScopesRemainDistinct() {
+        val s = Engine.settle(state(0).copy(monthlyRules = listOf(rule().copy(kind = "FIXED_INCOME", targetAccountId = "b"))), date)
+        assertTrue(s.transactions.all { it.type == "FIXED_INCOME" })
+        assertEquals(0L, s.scoped(setOf("a")).cash()); assertEquals(900_000L, s.scoped(setOf("b")).cash())
+        assertEquals(s.cash(), s.scoped(setOf("a", "b")).cash())
+        assertEquals(s, BackupCodec.parse(BackupCodec.export(s)).ledger())
+    }
+    @Test fun futureRuleHasNoRecordsAndNoEndLimit() {
+        val s = state(0).copy(monthlyRules = listOf(rule().copy(startDate = "2027-01-01")))
+        assertEquals(s, Engine.settle(s, date))
+        assertTrue(s.events(YearMonth.of(2027, 1), date).isEmpty())
+        assertEquals(300_000L, Engine.settle(s, LocalDate.parse("2027-01-15")).cash())
     }
 }

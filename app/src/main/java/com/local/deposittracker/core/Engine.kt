@@ -34,9 +34,10 @@ object Engine {
         require(from != to && cents > 0) { "请选择不同账户并填写正数金额" }
         require(LocalDate.parse(date) <= LocalDate.now()) { "转账不能使用未来日期" }
         val names = s.accounts.associate { it.id to it.name }
+        val group = newId()
         var result = s.balance(from, -cents, false).balance(to, cents)
-        result = result.record(Transaction(type = "TRANSFER", amount = -cents, date = date, accountId = from, title = "转出至 ${names[to]}", note = note))
-        return result.record(Transaction(type = "TRANSFER", amount = cents, date = date, accountId = to, title = "转入自 ${names[from]}", note = note))
+        result = result.record(Transaction(type = "TRANSFER", transferGroupId = group, amount = -cents, date = date, accountId = from, title = "转出至 ${names[to]}", note = note))
+        return result.record(Transaction(type = "TRANSFER", transferGroupId = group, amount = cents, date = date, accountId = to, title = "转入自 ${names[from]}", note = note))
     }
     fun validateDeposit(d: Deposit) {
         require(d.name.isNotBlank()) { "请输入产品名称" }
@@ -70,14 +71,46 @@ object Engine {
     }
     fun saveRule(s: Ledger, r: MonthlyRule): Ledger {
         require(r.name.isNotBlank() && r.amount > 0 && r.dayOfMonth in 1..31) { "请检查规则名称、金额和日期" }
+        require(r.kind in setOf("MONTHLY_DEPOSIT", "FIXED_INCOME")) { "规则类型不支持" }
         val start = LocalDate.parse(r.startDate); val end = r.endDate?.let(LocalDate::parse)
         require(end == null || end >= start) { "结束日期不能早于开始日期" }
         require(s.accounts.any { it.id == r.targetAccountId }) { "目标账户不存在" }
         val old = s.monthlyRules.find { it.id == r.id }
-        require(old == null || old.lastProcessedDate == null || (old.amount == r.amount && old.dayOfMonth == r.dayOfMonth && old.startDate == r.startDate && old.targetAccountId == r.targetAccountId)) { "已执行规则只能修改名称、结束日期和启用状态；金额或日期变更请停用旧规则后新建" }
+        require(old == null || old.lastProcessedDate == null || (old.kind == r.kind && old.amount == r.amount && old.dayOfMonth == r.dayOfMonth && old.startDate == r.startDate && old.targetAccountId == r.targetAccountId)) { "已执行规则只能修改名称、结束日期和启用状态；金额或日期变更请停用旧规则后新建" }
         return s.copy(monthlyRules = s.monthlyRules.filter { it.id != r.id } + r.copy(lastProcessedDate = old?.lastProcessedDate, updatedAt = now()))
     }
-    fun deleteRule(s: Ledger, id: String): Ledger = s.copy(monthlyRules = s.monthlyRules.filter { it.id != id })
+    private fun reverse(s: Ledger, rows: List<Transaction>): Ledger {
+        var result = s
+        rows.forEach { result = result.balance(it.accountId, Math.negateExact(it.amount)) }
+        return result.copy(transactions = result.transactions.filter { t -> rows.none { it.id == t.id } })
+    }
+    fun deleteRule(s: Ledger, id: String): Ledger = reverse(s, s.transactions.filter { it.relatedRuleId == id })
+        .copy(monthlyRules = s.monthlyRules.filter { it.id != id })
+    fun deleteTransaction(s: Ledger, id: String): Ledger {
+        val t = s.transactions.find { it.id == id } ?: error("流水不存在")
+        if (t.relatedDepositId != null) {
+            val ids = mutableSetOf(t.relatedDepositId)
+            do { val before = ids.size; s.deposits.filter { it.parentDepositId in ids }.forEach { ids.add(it.id) } } while (before != ids.size)
+            val result = reverse(s, s.transactions.filter { it.relatedDepositId in ids })
+            return result.copy(deposits = result.deposits.filter { it.id !in ids }.map { d ->
+                if (d.status == "ROLLED" && result.deposits.any { it.id in ids && it.parentDepositId == d.id }) d.copy(status = "MATURED") else d
+            })
+        }
+        if (t.type == "TRANSFER") {
+            val pair = if (t.transferGroupId != null) s.transactions.filter { it.transferGroupId == t.transferGroupId } else {
+                val name = s.accounts.first { it.id == t.accountId }.name
+                val candidates = s.transactions.filter { it.type == "TRANSFER" && it.id != t.id && it.date == t.date && it.amount == -t.amount &&
+                    it.title == (if (t.amount > 0) "转出至 $name" else "转入自 $name") &&
+                    t.title == (if (t.amount > 0) "转入自 " else "转出至 ") + s.accounts.first { a -> a.id == it.accountId }.name }
+                require(candidates.size == 1) { "旧版转账存在多笔同额记录，无法安全确定配对，请先导出备份并核对" }
+                listOf(t, candidates.single())
+            }
+            require(pair.size == 2 && pair.fold(0L) { n, row -> add(n, row.amount) } == 0L) { "转账配对不完整" }
+            return reverse(s, pair)
+        }
+        // Never rewind a rule cursor: deleted occurrences must stay deleted.
+        return reverse(s, listOf(t))
+    }
     private fun target(s: Ledger, d: Deposit): Pair<Ledger, String> {
         if (s.accounts.any { it.id == d.targetAccountId }) return s to d.targetAccountId
         if (s.accounts.any { it.id == d.sourceAccountId }) return s to d.sourceAccountId
@@ -113,7 +146,7 @@ object Engine {
                 if (due >= start && due <= through && (cursor == null || due > LocalDate.parse(cursor))) {
                     val id = "monthly:${r.id}:$due"
                     if (s.transactions.none { it.id == id }) s = s.balance(r.targetAccountId, r.amount).record(
-                        Transaction(id = id, type = "MONTHLY_DEPOSIT", amount = r.amount, date = due.toString(),
+                        Transaction(id = id, type = r.kind, amount = r.amount, date = due.toString(),
                             accountId = r.targetAccountId, relatedRuleId = r.id, title = r.name))
                     cursor = due.toString()
                 }

@@ -11,6 +11,7 @@ from adb_shell.adb_device import AdbDeviceTcp
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=5555)
 parser.add_argument("--reset", action="store_true", required=True)
+parser.add_argument("--precompile", action="store_true", help="Precompile app and test code for a software emulator")
 parser.add_argument("--output", default="/tmp/cunqi-instrumentation.txt")
 args = parser.parse_args()
 repo = pathlib.Path(__file__).resolve().parent.parent
@@ -28,6 +29,13 @@ for apk, remote in [(repo / "app/build/outputs/apk/debug/app-debug.apk", "/data/
     result = device.shell("pm install -r " + remote, transport_timeout_s=600, read_timeout_s=600, timeout_s=600)
     assert "Success" in result, result
 assert "Success" in device.shell("pm clear com.local.deposittracker"), "Could not reset test data"
+if args.precompile:
+    for package in ("com.local.deposittracker", "com.local.deposittracker.test"):
+        print("Precompiling", package, flush=True)
+        result = device.shell("cmd package compile -m speed -f " + package,
+            transport_timeout_s=600, read_timeout_s=600, timeout_s=600)
+        assert "Success" in result, result
+print("Running 4 Android tests", flush=True)
 chunks = []
 for chunk in device.streaming_shell("am instrument -w -r com.local.deposittracker.test/androidx.test.runner.AndroidJUnitRunner",
     transport_timeout_s=1800, read_timeout_s=1800):
@@ -35,5 +43,5 @@ for chunk in device.streaming_shell("am instrument -w -r com.local.deposittracke
     print(chunk, end="", flush=True)
 result = "".join(chunks)
 pathlib.Path(args.output).write_text(result)
-assert re.search(r"OK \(3 tests\)", result), "Instrumentation did not pass all 3 expected tests"
+assert re.search(r"OK \(4 tests\)", result), "Instrumentation did not pass all 4 expected tests"
 assert "INSTRUMENTATION_CODE: -1" in result, "Instrumentation did not complete normally"

@@ -30,28 +30,28 @@ fun accountEditor(s: Ledger, account: Account? = null): Editor = Editor(if (acco
         state.copy(accounts = state.accounts.map { if (it.id == account.id) it.copy(name = v.getValue("name"), includeInTotal = v["included"] == "true", note = v["note"].orEmpty(), updatedAt = now()) else it })
     }
 }
-fun cashEditor(s: Ledger): Editor = Editor("活期变动", listOf(
+fun cashEditor(s: Ledger, direction: String = "IN", date: String = today()): Editor = Editor(if (direction == "OUT") "一次性取款" else "一次性存款", listOf(
     accountField("account", "账户 *", s),
-    Field("kind", "变动类型", "IN", listOf("IN" to "外部存入", "OUT" to "外部支出", "SET" to "更正为指定余额")),
-    Field("amount", "金额（元）*", numeric = true), Field("date", "日期 YYYY-MM-DD", today()), Field("note", "备注")),
+    Field("kind", "变动类型", direction, listOf("IN" to "外部存入", "OUT" to "外部支出", "SET" to "更正为指定余额")),
+    Field("amount", "金额（元）*", numeric = true), Field("date", "日期 YYYY-MM-DD", date), Field("note", "备注")),
     "存款和回款是资产内部转移，请使用定期功能。更正余额会生成调整流水。") { v, state ->
     val cents = money(v.getValue("amount")); val id = v.getValue("account")
     val delta = when (v["kind"]) { "SET" -> Math.subtractExact(cents, state.accounts.first { it.id == id }.balance); "OUT" -> { require(cents > 0) { "请输入正数金额" }; -cents }; else -> { require(cents > 0) { "请输入正数金额" }; cents } }
     Engine.change(state, id, delta, if (v["kind"] == "SET") "ADJUSTMENT" else if (delta > 0) "MANUAL_INCOME" else "MANUAL_EXPENSE", v.getValue("date"), v["note"].orEmpty())
 }
-fun transferEditor(s: Ledger): Editor = Editor("账户间转账", listOf(accountField("from", "转出账户", s),
+fun transferEditor(s: Ledger, date: String = today()): Editor = Editor("账户间转账", listOf(accountField("from", "转出账户", s),
     accountField("to", "转入账户", s, s.accounts.getOrNull(1)?.id.orEmpty()), Field("amount", "金额（元）*", numeric = true),
-    Field("date", "日期 YYYY-MM-DD", today()), Field("note", "备注")), "转账只移动资产，不计入外部收入或支出。") { v, state ->
+    Field("date", "日期 YYYY-MM-DD", date), Field("note", "备注")), "转账只移动资产，不计入外部收入或支出。") { v, state ->
     Engine.transfer(state, v.getValue("from"), v.getValue("to"), money(v.getValue("amount")), v.getValue("date"), v["note"].orEmpty())
 }
-fun depositEditor(s: Ledger, parent: Deposit? = null): Editor {
+fun depositEditor(s: Ledger, parent: Deposit? = null, date: String = today()): Editor {
     val source = if (parent == null) s.accounts.firstOrNull()?.id.orEmpty() else s.transactions.firstOrNull { it.id == "close:${parent.id}" }?.accountId ?: parent.targetAccountId
     return Editor(if (parent == null) "新增定期 / 固定收益" else "转存 · ${parent.name}", listOf(
         Field("name", "产品名称 *", parent?.name.orEmpty()), Field("bank", "银行 / 机构", parent?.institution.orEmpty()),
         Field("type", "产品类型", parent?.type ?: "定期存款", listOf("定期存款", "大额存单", "固定收益理财", "国债", "其他固定收益").map { it to it }),
         Field("principal", "本金（元）*", parent?.actualMaturityAmount?.let(::yuan).orEmpty(), numeric = true),
         Field("rate", "年利率（%，最多四位小数）*", if (parent == null) "1.3500" else "", numeric = true),
-        Field("start", "开始日期 YYYY-MM-DD", parent?.endDate ?: today()), Field("end", "到期日期 YYYY-MM-DD", ""),
+        Field("start", "开始日期 YYYY-MM-DD", parent?.endDate ?: date), Field("end", "到期日期 YYYY-MM-DD", ""),
         Field("mode", "计息方式", "DAY", listOf("DAY" to "按实际天数 / 365", "MONTH" to "按月 / 12", "MANUAL" to "手动填写到期金额")),
         Field("months", "计息月数（按月时使用）", "3", numeric = true), Field("manual", "手动到期金额（元）", numeric = true),
         accountField("source", "来源账户 *", s, source), accountField("target", "到期账户（默认来源账户）", s, source),
@@ -72,16 +72,16 @@ fun earlyEditor(d: Deposit): Editor = Editor("提前支取 · ${d.name}", listOf
     Field("date", "实际到账日期 YYYY-MM-DD", today())), "本金 ${amount(d.principal)}。请按银行实际回款填写，不按原定年利率自动计算。") { v, state ->
     Engine.earlyWithdraw(state, d.id, money(v.getValue("amount")), v.getValue("date"))
 }
-fun ruleEditor(s: Ledger, rule: MonthlyRule? = null): Editor = Editor(if (rule == null) "新增自动月存" else "编辑自动月存", listOf(
-    Field("name", "规则名称 *", rule?.name ?: "每月工资结余"), Field("amount", "每月金额（元）*", rule?.amount?.let(::yuan).orEmpty(), numeric = true),
+fun ruleEditor(s: Ledger, rule: MonthlyRule? = null, kind: String = rule?.kind ?: "MONTHLY_DEPOSIT", date: String = today()): Editor = Editor(if (kind == "FIXED_INCOME") "固定收入规则" else if (rule == null) "新增自动月存" else "编辑自动月存", listOf(
+    Field("name", "规则名称 *", rule?.name ?: if (kind == "FIXED_INCOME") "每月固定收入" else "每月工资结余"), Field("amount", "每月金额（元）*", rule?.amount?.let(::yuan).orEmpty(), numeric = true),
     Field("day", "每月几日（1–31）*", (rule?.dayOfMonth ?: 15).toString(), numeric = true),
-    Field("start", "开始日期 YYYY-MM-DD", rule?.startDate ?: today()), Field("end", "结束日期（留空为长期）", rule?.endDate.orEmpty()),
+    Field("start", "开始日期 YYYY-MM-DD", rule?.startDate ?: date), Field("end", "结束日期（留空为长期）", rule?.endDate.orEmpty()),
     accountField("target", "存入账户 *", s, rule?.targetAccountId ?: s.accounts.firstOrNull()?.id.orEmpty()),
     Field("enabled", "启用规则", (rule?.enabled ?: true).toString(), boolean)),
     "这是一条本地记账规则，不会操作银行资金。打开应用时补记过去应存入的月份；31 日在短月按月底执行。已执行规则的金额和日期不可改动。") { v, state ->
     Engine.settle(Engine.saveRule(state, MonthlyRule(id = rule?.id ?: newId(), name = v.getValue("name"), amount = money(v.getValue("amount")),
         dayOfMonth = v.getValue("day").toInt(), startDate = v.getValue("start"), endDate = v["end"]?.takeIf { it.isNotBlank() }, targetAccountId = v.getValue("target"),
-        enabled = v["enabled"] == "true", lastProcessedDate = rule?.lastProcessedDate, createdAt = rule?.createdAt ?: now())), java.time.LocalDate.now())
+        kind = kind, enabled = v["enabled"] == "true", lastProcessedDate = rule?.lastProcessedDate, createdAt = rule?.createdAt ?: now())), java.time.LocalDate.now())
 }
 
 @Composable

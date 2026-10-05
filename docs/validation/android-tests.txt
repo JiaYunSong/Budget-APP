@@ -1,52 +1,67 @@
-INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.PersistenceTest
+INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.MigrationTest
 INSTRUMENTATION_STATUS: current=1
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
+INSTRUMENTATION_STATUS: stream=
+com.local.deposittracker.data.MigrationTest:
+INSTRUMENTATION_STATUS: test=upgradePreservesExistingSalaryRulesAndTransactions
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.MigrationTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=4
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=upgradePreservesExistingSalaryRulesAndTransactions
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.PersistenceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=
 com.local.deposittracker.data.PersistenceTest:
 INSTRUMENTATION_STATUS: test=atomicUpdatesRollbackAndSnapshotRoundTrip
 INSTRUMENTATION_STATUS_CODE: 1
 INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.PersistenceTest
-INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: current=2
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=.
 INSTRUMENTATION_STATUS: test=atomicUpdatesRollbackAndSnapshotRoundTrip
 INSTRUMENTATION_STATUS_CODE: 0
 INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.PersistenceTest
-INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: current=3
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=
 INSTRUMENTATION_STATUS: test=onDiskDatabaseSurvivesReopen
 INSTRUMENTATION_STATUS_CODE: 1
 INSTRUMENTATION_STATUS: class=com.local.deposittracker.data.PersistenceTest
-INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: current=3
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=.
 INSTRUMENTATION_STATUS: test=onDiskDatabaseSurvivesReopen
 INSTRUMENTATION_STATUS_CODE: 0
 INSTRUMENTATION_STATUS: class=com.local.deposittracker.ui.AppFlowTest
-INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: current=4
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=
 com.local.deposittracker.ui.AppFlowTest:
 INSTRUMENTATION_STATUS: test=welcomeCreateAccountDepositAndNavigate
 INSTRUMENTATION_STATUS_CODE: 1
 INSTRUMENTATION_STATUS: class=com.local.deposittracker.ui.AppFlowTest
-INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: current=4
 INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
-INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: numtests=4
 INSTRUMENTATION_STATUS: stream=.
 INSTRUMENTATION_STATUS: test=welcomeCreateAccountDepositAndNavigate
 INSTRUMENTATION_STATUS_CODE: 0
 INSTRUMENTATION_RESULT: stream=
 
-Time: 99.288
+Time: 132.306
 
-OK (3 tests)
+OK (4 tests)
 
 
 INSTRUMENTATION_CODE: -1

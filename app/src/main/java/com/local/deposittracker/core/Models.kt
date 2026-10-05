@@ -1,5 +1,6 @@
 package com.local.deposittracker.core
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
@@ -66,12 +67,13 @@ data class Deposit(@PrimaryKey val id: String = newId(), val name: String, val i
 data class MonthlyRule(@PrimaryKey val id: String = newId(), val name: String, val amount: Long,
     val dayOfMonth: Int, val startDate: String, val endDate: String? = null, val targetAccountId: String,
     val enabled: Boolean = true, val lastProcessedDate: String? = null,
+    @ColumnInfo(defaultValue = "'MONTHLY_DEPOSIT'") val kind: String = "MONTHLY_DEPOSIT",
     val createdAt: String = now(), val updatedAt: String = now())
 
 @Serializable @Entity(tableName = "transactions")
 data class Transaction(@PrimaryKey val id: String = newId(), val type: String, val amount: Long,
     val date: String, val accountId: String, val relatedDepositId: String? = null,
-    val relatedRuleId: String? = null, val title: String, val note: String = "", val createdAt: String = now())
+    val transferGroupId: String? = null, val relatedRuleId: String? = null, val title: String, val note: String = "", val createdAt: String = now())
 
 @Serializable
 data class Settings(val theme: String = "SYSTEM", val hideMoney: Boolean = false,
@@ -90,3 +92,10 @@ data class Ledger(val accounts: List<Account> = emptyList(), val deposits: List<
     fun total(date: LocalDate = LocalDate.now()): Long = add(add(cash(), principal()),
         if (settings.includeAccruedInterest) active().filter { included(it) && it.interestMode == "DAY" }.fold(0L) { n, d -> add(n, d.interest(date)) } else 0)
 }
+
+/** Empty selection means the combined ledger; an explicit selection includes those accounts. */
+fun Ledger.scoped(ids: Set<String>): Ledger = if (ids.isEmpty()) this else copy(
+    accounts = accounts.filter { it.id in ids }.map { it.copy(includeInTotal = true) },
+    deposits = deposits.filter { it.sourceAccountId in ids },
+    monthlyRules = monthlyRules.filter { it.targetAccountId in ids },
+    transactions = transactions.filter { it.accountId in ids })

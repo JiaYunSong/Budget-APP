@@ -43,6 +43,7 @@ object BackupCodec {
             }
         }
         s.monthlyRules.forEach { r ->
+            require(r.kind in setOf("MONTHLY_DEPOSIT", "FIXED_INCOME")) { "规则类型无效" }
             require(r.name.isNotBlank() && r.amount > 0 && r.dayOfMonth in 1..31 && r.targetAccountId in accountIds) { "自动存款规则无效" }
             val start = LocalDate.parse(r.startDate)
             r.endDate?.let { require(LocalDate.parse(it) >= start) }
@@ -50,7 +51,7 @@ object BackupCodec {
         }
         s.transactions.forEach { t ->
             LocalDate.parse(t.date); require(t.accountId in accountIds) { "流水关联的账户不存在" }
-            require(t.type in setOf("MANUAL_INCOME", "MANUAL_EXPENSE", "MONTHLY_DEPOSIT", "FIXED_DEPOSIT_CREATE", "FIXED_DEPOSIT_MATURE", "FIXED_DEPOSIT_EARLY_WITHDRAW", "TRANSFER", "ROLLOVER", "ADJUSTMENT")) { "流水类型无效" }
+            require(t.type in setOf("FIXED_INCOME", "MANUAL_INCOME", "MANUAL_EXPENSE", "MONTHLY_DEPOSIT", "FIXED_DEPOSIT_CREATE", "FIXED_DEPOSIT_MATURE", "FIXED_DEPOSIT_EARLY_WITHDRAW", "TRANSFER", "ROLLOVER", "ADJUSTMENT")) { "流水类型无效" }
             require(t.relatedDepositId == null || t.relatedDepositId in depositIds) { "流水关联的产品不存在" }
         }
         require(s.settings.theme in setOf("SYSTEM", "LIGHT", "DARK")) { "主题设置无效" }

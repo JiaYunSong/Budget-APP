@@ -1,0 +1,11 @@
+Android 15 / API 35, AOSP emulator without GMS or KVM.
+1.0.0 signed Release installation: Success
+1.0.0 cold launch: Status: ok; TotalTime: 6612 ms
+1.1.0 signed Release upgrade with pm install -r: Success
+1.1.0 cold launch: Status: ok; TotalTime: 7279 ms
+Both certificates SHA-256: b6082392986fdcb6a41968b4ef661e6c5e405517314a956936a6bc4efc884c6d
+39 JVM tests: passed, 0 skipped, 0 failures, 0 errors
+4 Android tests: OK (4 tests); INSTRUMENTATION_CODE: -1
+APK SHA-256 and 16KB zip alignment: verified
+Final contrast-adjusted APK reinstall: Success; cold launch: Status: ok; TotalTime: 8732 ms
+Final signed Release home screen: validated, balance 0.00; screenshot home-1.1.png
