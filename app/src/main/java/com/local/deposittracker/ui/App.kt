@@ -71,6 +71,7 @@ fun CunqiApp(vm: AppViewModel) {
             var recordDate by remember { mutableStateOf(today()) }
             var scope by remember { mutableStateOf(setOf<String>()) }
             var accountsMenu by remember { mutableStateOf(false) }
+            var manageAccounts by remember { mutableStateOf(false) }
             var pendingDelete by remember { mutableStateOf<String?>(null) }
             val view = s.scoped(scope)
             val formState = s.copy(accounts = s.accounts.sortedBy { if (it.id in scope) 0 else 1 })
@@ -91,7 +92,7 @@ fun CunqiApp(vm: AppViewModel) {
                 if (!vm.ready) Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("正在读取本地资产…") } }
                 else NavHost(navController = nav, startDestination = "home", modifier = Modifier.padding(padding)) {
                     composable("home") { Home(view, { selected = it }, { editor = accountEditor(s) }, { editor = cashEditor(s) }) }
-                    composable("calendar") { CalendarScreen(view, { date -> recordDate = date; addMenu = true }, { pendingDelete = it }) }
+                    composable("calendar") { CalendarScreen(view, { date -> recordDate = date; addMenu = true }, { pendingDelete = it }, { id -> editor = transactionEditor(s.transactions.first { it.id == id }) }) }
                     composable("deposits") { DepositsScreen(view, { selected = it }, { editor = accountEditor(s, it) }, { editor = ruleEditor(s, it) },
                         { r -> vm.act("状态已更新") { state -> Engine.settle(state.copy(monthlyRules = state.monthlyRules.map { if (it.id == r.id) it.copy(enabled = !it.enabled, updatedAt = now()) else it }), LocalDate.now()) } },
                         { r -> vm.act("规则及对应存款已清除") { Engine.deleteRule(it, r.id) } }, { editor = transferEditor(s) }) }
@@ -114,6 +115,7 @@ fun CunqiApp(vm: AppViewModel) {
                     }, modifier = Modifier.fillMaxWidth()) { Text(title) }
                 } }
             }, confirmButton = { TextButton(onClick = { addMenu = false }) { Text("取消") } })
+            if (manageAccounts) AccountManager(s, vm.busy, { manageAccounts = false }) { ids, target -> vm.act("账户已删除，余额和关联记录已处理", done = { manageAccounts = false; scope = scope - ids }) { Engine.deleteAccounts(it, ids, target) } }
             if (accountsMenu) AlertDialog(onDismissRequest = { accountsMenu = false }, title = { Text("统计账户") }, text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("选择多个账户合并统计；不选择则显示全部账户。")
@@ -121,13 +123,14 @@ fun CunqiApp(vm: AppViewModel) {
                     s.accounts.forEach { a -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(a.id in scope, { checked -> scope = if (checked) scope + a.id else scope - a.id }); Text(a.name)
                     } }
+                    OutlinedButton(onClick = { accountsMenu = false; manageAccounts = true }) { Text("管理 / 勾选删除账户") }
                     OutlinedButton(onClick = { accountsMenu = false; editor = accountEditor(s) }) { Text("新建账户") }
                 }
             }, confirmButton = { TextButton(onClick = { accountsMenu = false }) { Text("完成") } })
             pendingDelete?.let { id -> AlertDialog(onDismissRequest = { pendingDelete = null }, title = { Text("删除这笔流水？") }, text = {
                 Text("将撤销对应账户金额。转账会同时撤销两端；投资会删除该产品及后续转存和回款。已使用的金额被撤销后，账户可能出现负余额。月存规则仍会继续执行，已删除月份不会补回。")
             }, confirmButton = { TextButton(onClick = { vm.act("流水已删除", done = { pendingDelete = null }) { Engine.deleteTransaction(it, id) } }) { Text("确认删除") } }, dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }) }
-            editor?.let { form -> EditorDialog(form, vm.busy, { editor = null }) { values -> vm.act(done = { editor = null }) { form.save(values, it) } } }
+            editor?.let { form -> EditorDialog(form, vm.busy, { editor = null }) { values -> vm.act(done = { editor = null }) { Pictures.annotate(it, form.save(values, it), values["images"] ?: "[]") } } }
             selected?.let { id -> s.deposits.find { it.id == id }?.let { d -> DepositDetail(d, s, { selected = null },
                 { selected = null; editor = editDepositEditor(s, d) }, { selected = null; editor = earlyEditor(d) },
                 { selected = null; editor = depositEditor(s, d) }, { vm.act("产品已归档") { state -> state.copy(deposits = state.deposits.map { if (it.id == id) it.copy(archived = true) else it }) }; selected = null }) } }
@@ -171,7 +174,7 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
             }
             }
         } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard("预计总利息", s.expectedInterest(), Modifier.weight(1f)); StatCard("本月新增存款", events.filter { !it.forecast && it.kind in setOf("MONTHLY_DEPOSIT", "FIXED_INCOME", "MANUAL_INCOME") }.sumOf { it.cents }, Modifier.weight(1f)) } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard("预计总利息", s.expectedInterest(), Modifier.weight(1f)); StatCard("今日预计收入", s.dailyInterest(LocalDate.now()).fold(0L) { n, item -> add(n, item.second) }, Modifier.weight(1f)) } }
         item { Section("资产分布"); Distribution(s) }
         if (s.accounts.isEmpty()) item { Empty("从第一个账户开始", "创建活期账户后，即可添加定期与自动月存。"); Button(onClick = create, modifier = Modifier.fillMaxWidth()) { Text("创建活期账户") } }
         else item { Section("活期账户"); Card { Column(Modifier.padding(16.dp)) { s.accounts.forEach { ValueRow(it.name + if (it.includeInTotal) "" else "（不计总额）", it.balance) }; TextButton(onClick = cash) { Text("记录活期变动") } } } }
@@ -255,6 +258,7 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
                     items(s.monthlyRules, key = { it.id }) { r -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) { Text(r.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Switch(r.enabled, { ruleToggle(r) }) }
                         Text("每月${r.dayOfMonth}日 · ${display(r.amount)}"); Text("${s.accounts.find { it.id == r.targetAccountId }?.name} · ${r.startDate} 至 ${r.endDate ?: "长期"}", style = MaterialTheme.typography.bodySmall)
+                        PictureGallery(r.imagesJson)
                         Text("上次执行：${r.lastProcessedDate ?: "尚未执行"}", style = MaterialTheme.typography.labelSmall)
                         Row { TextButton(onClick = { ruleEdit(r) }) { Text("编辑") }; TextButton(onClick = { deleteRule = r }) { Text("删除规则") } }
                     } } }
@@ -278,6 +282,7 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
             ValueRow("预计利息", d.interest()); ValueRow("预计本息", d.maturity())
             d.actualMaturityAmount?.let { ValueRow("实际到账", it); ValueRow("实际利息", it - d.principal) }
             Text("来源：${s.accounts.find { it.id == d.sourceAccountId }?.name}\n回款：${s.accounts.find { it.id == d.targetAccountId }?.name}", style = MaterialTheme.typography.bodySmall)
+            PictureGallery(d.imagesJson)
             if (d.note.isNotBlank()) Text(d.note)
             Section("转存历史")
             val root = run { var cur = d; val seen = mutableSetOf<String>(); while (cur.parentDepositId != null && seen.add(cur.id)) { cur = s.deposits.find { it.id == cur.parentDepositId } ?: break }; cur }
@@ -290,7 +295,7 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
     }, confirmButton = { TextButton(onClick = close) { Text("关闭") } })
 }
 
-@Composable private fun CalendarScreen(s: Ledger, create: (String) -> Unit, delete: (String) -> Unit) {
+@Composable private fun CalendarScreen(s: Ledger, create: (String) -> Unit, delete: (String) -> Unit, edit: (String) -> Unit) {
     var mode by remember { mutableIntStateOf(0) }; var month by remember { mutableStateOf(YearMonth.now()) }; var selectedDay by remember { mutableIntStateOf(LocalDate.now().dayOfMonth) }
     var filter by remember { mutableStateOf("ALL") }
     Column {
@@ -308,11 +313,20 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
             when (mode) {
                 0 -> {
                     val events = s.events(month)
-                    item { MonthGrid(month, selectedDay, events) { selectedDay = it }; Text("绿：月存   蓝：定期   橙：到期   紫：转存", style = MaterialTheme.typography.labelSmall) }
+                    item { MonthGrid(month, selectedDay, events, s) { selectedDay = it }; Text("绿：月存   蓝：定期   橙：到期   紫：转存", style = MaterialTheme.typography.labelSmall) }
                     item { Section("${month.monthValue}月${selectedDay.coerceAtMost(month.lengthOfMonth())}日", "实际入账，可新增或删除") }
+                    item {
+                        val date = month.atDay(selectedDay.coerceAtMost(month.lengthOfMonth()))
+                        if (date <= LocalDate.now()) Card { Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            val earnings = s.dailyInterest(date)
+                            ValueRow("当日预计利息", earnings.fold(0L) { total, pair -> add(total, pair.second) })
+                            Text("估算收益，未作为入账流水；按月及手动收益按整个存期平均分摊。", style = MaterialTheme.typography.labelSmall)
+                            earnings.forEach { (deposit, cents) -> ValueRow(deposit.name, cents) }
+                        } }
+                    }
                     val dayEvents = events.filter { LocalDate.parse(it.date).dayOfMonth == selectedDay.coerceAtMost(month.lengthOfMonth()) }
                     if (dayEvents.isEmpty()) item { Empty("这一天暂无事件", "选择日期后可新增流水；未来尚未发生的存款不会显示。") }
-                    items(dayEvents, key = { it.id }) { EventCard(it, delete = { delete(it.id) }) }
+                    items(dayEvents, key = { it.id }) { EventCard(it, images = s.transactionPictures(s.transactions.first { t -> t.id == it.id }), delete = { delete(it.id) }, edit = { edit(it.id) }) }
                 }
                 1 -> {
                     val events = (1..12).flatMap { s.events(YearMonth.of(month.year, it)) }
@@ -326,7 +340,7 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
                         val weighted = if (s.principal() > 0) s.active().filter { s.included(it) }.fold(BigDecimal.ZERO) { n, d -> n + BigDecimal(d.principal).multiply(BigDecimal(d.annualRateText)) }.divide(BigDecimal(s.principal()), 4, RoundingMode.HALF_UP).toPlainString() else "0"
                         Text("当前本金加权平均年利率 $weighted%", style = MaterialTheme.typography.bodySmall)
                     } } }
-                    items(events, key = { it.id }) { EventCard(it, delete = { delete(it.id) }) }
+                    items(events, key = { it.id }) { EventCard(it, images = s.transactionPictures(s.transactions.first { t -> t.id == it.id }), delete = { delete(it.id) }, edit = { edit(it.id) }) }
                     items((1..12).toList()) { m -> val e = s.events(YearMonth.of(month.year, m)); Card(Modifier.fillMaxWidth().clickable { month = YearMonth.of(month.year, m); selectedDay = 1; mode = 0 }) { Column(Modifier.padding(16.dp)) {
                         Text("${m}月", fontWeight = FontWeight.Bold); ValueRow("存入（已入账）", e.filter { it.kind in setOf("MONTHLY_DEPOSIT", "FIXED_INCOME", "MANUAL_INCOME") }.sumOf { it.cents }); ValueRow("到期本息（已入账）", e.filter { it.kind == "FIXED_DEPOSIT_MATURE" }.sumOf { it.cents })
                     } } }
@@ -335,23 +349,26 @@ private fun Home(s: Ledger, detail: (String) -> Unit, create: () -> Unit, cash: 
                     item { ChoiceField("流水筛选", filter, listOf("ALL" to "全部", "FIXED_INCOME" to "固定收入", "MONTHLY_DEPOSIT" to "自动存款", "FIXED_DEPOSIT_CREATE" to "定期存入", "FIXED_DEPOSIT_MATURE" to "到期", "ROLLOVER" to "转存", "TRANSFER" to "账户转账", "ADJUSTMENT" to "手动调整", "FIXED_DEPOSIT_EARLY_WITHDRAW" to "提前支取", "MANUAL_INCOME" to "外部存入", "MANUAL_EXPENSE" to "外部支出")) { filter = it } }
                     val t = s.transactions.filter { it.date <= today() && (filter == "ALL" || it.type == filter) }.sortedWith(compareByDescending<Transaction> { it.date }.thenByDescending { it.createdAt })
                     if (t.isEmpty()) item { Empty("还没有流水", "账户变动、定期和月存都会自动记录资金历史。") }
-                    items(t, key = { it.id }) { EventCard(AssetEvent(it.date, it.title, it.amount, it.type, id = it.id), it.note, delete = { delete(it.id) }) }
+                    items(t, key = { it.id }) { EventCard(AssetEvent(it.date, it.title, it.amount, it.type, id = it.id), it.note, images = s.transactionPictures(it), delete = { delete(it.id) }, edit = { edit(it.id) }) }
                 }
             }
         }
     }
 }
 private fun eventColor(kind: String): Color = when (kind) { "MONTHLY_DEPOSIT", "FIXED_INCOME", "MANUAL_INCOME" -> Color(0xFF579B76); "FIXED_DEPOSIT_MATURE", "FIXED_DEPOSIT_EARLY_WITHDRAW" -> Color(0xFFB78A53); "ROLLOVER" -> Color(0xFF977BB2); else -> Color(0xFF648FA8) }
-@Composable private fun MonthGrid(month: YearMonth, selected: Int, events: List<AssetEvent>, select: (Int) -> Unit) {
+@Composable private fun MonthGrid(month: YearMonth, selected: Int, events: List<AssetEvent>, ledger: Ledger, select: (Int) -> Unit) {
     val offset = month.atDay(1).dayOfWeek.value - 1
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelSmall) } }
         repeat((offset + month.lengthOfMonth() + 6) / 7) { week -> Row { repeat(7) { day ->
             val n = week * 7 + day - offset + 1
-            Box(Modifier.weight(1f).height(56.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).height(70.dp), contentAlignment = Alignment.Center) {
                 if (n in 1..month.lengthOfMonth()) Surface(color = if (n == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxSize().clickable { select(n) }) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Text(n.toString(), fontWeight = if (n == selected) FontWeight.Bold else FontWeight.Normal)
+                        val date = month.atDay(n)
+                        val interest = ledger.dailyInterest(date).fold(0L) { total, pair -> add(total, pair.second) }
+                        if (date <= LocalDate.now() && interest != 0L) Text(if (LocalHidden.current) "••" else "≈${yuan(interest)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { events.filter { LocalDate.parse(it.date).dayOfMonth == n }.map { it.kind }.distinct().take(3).forEach { Text("•", color = eventColor(it), style = MaterialTheme.typography.labelSmall) } }
                     }
                 }
@@ -359,10 +376,10 @@ private fun eventColor(kind: String): Color = when (kind) { "MONTHLY_DEPOSIT", "
         } } }
     } }
 }
-@Composable private fun EventCard(e: AssetEvent, note: String = "", delete: (() -> Unit)? = null) {
+@Composable private fun EventCard(e: AssetEvent, note: String = "", images: String = "[]", delete: (() -> Unit)? = null, edit: (() -> Unit)? = null) {
     Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("●", color = eventColor(e.kind)); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(e.title, fontWeight = FontWeight.Medium); Text("${e.date} · ${eventLabel(e.kind)}${if (e.forecast) " · 计划" else " · 已记账"}", style = MaterialTheme.typography.labelSmall); if (note.isNotBlank()) Text(note, style = MaterialTheme.typography.bodySmall) }
-        Column(horizontalAlignment = Alignment.End) { Text(display(e.cents), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium); if (delete != null) IconButton(onClick = delete) { Icon(Icons.Outlined.DeleteOutline, "删除流水") } }
+        Text("●", color = eventColor(e.kind)); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(e.title, fontWeight = FontWeight.Medium); Text("${e.date} · ${eventLabel(e.kind)}${if (e.forecast) " · 计划" else " · 已记账"}", style = MaterialTheme.typography.labelSmall); if (note.isNotBlank()) Text(note, style = MaterialTheme.typography.bodySmall); PictureGallery(images) }
+        Column(horizontalAlignment = Alignment.End) { Text(display(e.cents), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium); if (edit != null) TextButton(onClick = edit) { Text("明细 / 截图") }; if (delete != null) IconButton(onClick = delete) { Icon(Icons.Outlined.DeleteOutline, "删除流水") } }
     } }
 }
 
@@ -374,13 +391,13 @@ private fun eventColor(kind: String): Color = when (kind) { "MONTHLY_DEPOSIT", "
             Toggle("总资产计入按日应计收益", s.settings.includeAccruedInterest) { value -> vm.act(success = "") { it.copy(settings = it.settings.copy(includeAccruedInterest = value)) } }
             Text("默认不计预计收益。手动到期金额和按月产品不计入每日应计收益。默认货币：人民币 ¥", style = MaterialTheme.typography.bodySmall)
         } } }
-        item { Section("数据管理", "完整恢复请使用 JSON；CSV 用于新增资产与表格分析")
+        item { Section("数据管理", "完整恢复请使用 JSON；CSV 用于新增资产与表格分析（包含图片 Base64）")
             Card { Column(Modifier.fillMaxWidth().padding(16.dp)) {
                 Button(onClick = exportJson, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("导出完整备份（JSON）") }
                 OutlinedButton(onClick = importJson, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("导入完整备份 / 覆盖恢复") }
-                OutlinedButton(onClick = exportCsv, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("导出 CSV（Excel / WPS）") }
+                OutlinedButton(onClick = exportCsv, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("导出 CSV（含图片完整备份）") }
                 OutlinedButton(onClick = importCsv, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("导入 CSV（先预览）") }
-                Text("CSV 导入会扣减来源账户余额，并为过去已到期资产自动回款。历史已结算资产仅支持 JSON 恢复，避免重复记账。", style = MaterialTheme.typography.bodySmall)
+                Text("完整 JSON 和本应用导出的 CSV 都可恢复全部记录与截图。旧版资产 CSV 导入会扣减来源账户本金，并自动处理已到期资产；历史已结算记录请用完整备份恢复。", style = MaterialTheme.typography.bodySmall)
                 Text("上次完整备份：${s.settings.lastBackup ?: "尚未备份"}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 12.dp))
                 if (ChronoUnit.DAYS.between(LocalDate.parse(s.settings.lastBackup ?: s.settings.firstUsed), LocalDate.now()) >= 30) Text("你已超过30天没有备份，建议导出一次完整备份。", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
             } }
@@ -392,7 +409,7 @@ private fun eventColor(kind: String): Color = when (kind) { "MONTHLY_DEPOSIT", "
             if (s.settings.reminders) upcoming.forEach { Text("${it.name} · ${it.days()}天后到期", modifier = Modifier.padding(top = 8.dp)) }
         } } }
         item { Section("隐私与关于"); Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("存期 1.1.0", fontWeight = FontWeight.Bold)
+            Text("存期 1.2.0", fontWeight = FontWeight.Bold)
             Text("本应用不需要账号。\n本应用不会上传您的任何财务数据。\n所有数据均保存在本机。\n本应用不声明互联网权限，不依赖 Google 服务。")
             Text("卸载应用会删除本地数据。完整备份包含敏感财务信息，请保存到可信位置，并定期备份。", color = MaterialTheme.colorScheme.secondary)
             Text("自动月存是记账计划，不是银行自动转账。预计利息以实际银行回款为准。", style = MaterialTheme.typography.bodySmall)
@@ -403,15 +420,16 @@ private fun eventColor(kind: String): Color = when (kind) { "MONTHLY_DEPOSIT", "
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(title, modifier = Modifier.weight(1f)); Switch(value, change) }
 }
 @Composable private fun CsvImportDialog(p: CsvPreview, busy: Boolean, close: () -> Unit, apply: (Boolean, Boolean) -> Unit) {
-    var skip by remember { mutableStateOf(true) }; var negative by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text("CSV 导入预览") }, text = {
+    var skip by remember { mutableStateOf(true) }; var negative by remember { mutableStateOf(true) }
+    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text(if (p.complete == null) "CSV 导入预览" else "CSV 完整备份恢复") }, text = {
         Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (p.complete != null) Text("此文件包含完整备份和图片，将覆盖本机账户、投资、规则和流水。请先确认已保存当前数据。")
             Text("共发现 ${p.rowCount} 条\n成功解析 ${p.deposits.size} 条\n错误 ${p.errors.size} 条\n疑似重复 ${p.duplicates.size} 条")
             p.errors.forEach { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            Toggle("跳过疑似重复", skip) { skip = it }; Toggle("余额不足时仍然导入", negative) { negative = it }
-            Text("确认导入后会扣减来源账户本金；任何一行失败都会整体回滚。请先检查账户余额，必要时先调整为导入前的余额。", style = MaterialTheme.typography.bodySmall)
+            if (p.complete == null) Toggle("跳过疑似重复", skip) { skip = it }; if (p.complete == null) Toggle("余额不足时仍然导入", negative) { negative = it }
+            if (p.complete == null) Text("确认导入后会扣减来源账户本金；任何一行失败都会整体回滚。请先检查账户余额，必要时先调整为导入前的余额。", style = MaterialTheme.typography.bodySmall)
             p.deposits.take(50).forEach { Text("${it.name} · ${display(it.principal)}\n${it.startDate} → ${it.endDate}${if (it.id in p.duplicates) " · 疑似重复" else ""}", style = MaterialTheme.typography.bodySmall) }
             if (p.deposits.size > 50) Text("仅展示前50条，确认后会处理全部记录。")
         }
-    }, confirmButton = { Button(enabled = !busy && p.errors.isEmpty() && p.deposits.isNotEmpty(), onClick = { apply(skip, negative) }) { Text("确认导入") } }, dismissButton = { TextButton(enabled = !busy, onClick = close) { Text("取消") } })
+    }, confirmButton = { Button(enabled = !busy && p.errors.isEmpty() && (p.deposits.isNotEmpty() || p.complete != null), onClick = { apply(skip, negative) }) { Text(if (p.complete == null) "确认导入" else "覆盖恢复含图片备份") } }, dismissButton = { TextButton(enabled = !busy, onClick = close) { Text("取消") } })
 }

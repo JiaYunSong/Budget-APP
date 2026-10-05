@@ -42,7 +42,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 withContext(Dispatchers.IO) {
                     val s = repo.snapshot()
-                    val text = if (csv) CsvCodec.export(s) else BackupCodec.export(s.copy(settings = s.settings.copy(lastBackup = today())))
+                    val text = if (csv) CsvCodec.export(s, complete = true) else BackupCodec.export(s.copy(settings = s.settings.copy(lastBackup = today())))
                     val resolver = getApplication<Application>().contentResolver
                     requireNotNull(resolver.openOutputStream(uri, "wt")) { "无法写入所选文件" }.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
                     if (!csv) repo.update { it.copy(settings = it.settings.copy(lastBackup = today())) }
@@ -62,7 +62,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         val buffer = ByteArray(8192)
                         while (true) {
                             val count = it.read(buffer); if (count < 0) break
-                            require(output.size() + count <= 10_000_000) { "文件超过 10MB" }
+                            require(output.size() + count <= Pictures.MAX_FILE) { "文件超过48MB" }
                             output.write(buffer, 0, count)
                         }
                         output.toString("UTF-8")

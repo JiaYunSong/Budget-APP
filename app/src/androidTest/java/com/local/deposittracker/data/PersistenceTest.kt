@@ -31,7 +31,7 @@ class PersistenceTest {
             val repo = LedgerRepository(db)
             repo.update { Engine.createAccount(it, "工商银行", 10_000_000, true, "本地持久化测试") }
             val before = repo.snapshot()
-            try { repo.update { Engine.createDeposit(it, Deposit(name = "余额不足", principal = 20_000_000, annualRateText = "2", startDate = today(), endDate = LocalDate.now().plusYears(1).toString(), sourceAccountId = before.accounts.single().id, targetAccountId = before.accounts.single().id)) }; fail("Expected failure") } catch (_: IllegalArgumentException) {}
+            try { repo.update { Engine.createDeposit(it, Deposit(name = "余额不足", principal = 20_000_000, annualRateText = "2", startDate = today(), endDate = LocalDate.now().plusYears(1).toString(), sourceAccountId = before.accounts.single().id, targetAccountId = before.accounts.single().id), allowNegative = false) }; fail("Expected failure") } catch (_: IllegalArgumentException) {}
             assertEquals(before, repo.snapshot())
             val restored = BackupCodec.parse(BackupCodec.export(repo.snapshot())).ledger()
             repo.update { restored }

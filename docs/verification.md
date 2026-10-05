@@ -1,4 +1,4 @@
-# 1.1.0 验证记录
+# 1.2.0 验证记录
 
 验证日期：2026-10-05。当前云实例中执行了安装脚本、构建脚本和原生 Android 测试；本记录不表示所有品牌实体手机已逐一测试。
 
@@ -7,22 +7,24 @@
 | 检查 | 实际结果 |
 | --- | --- |
 | `scripts/cloud-setup.sh` | 实际执行成功；官方工具校验、SDK 安装、Debug 构建和测试完成 |
-| `testDebugUnitTest` | **39 项通过，0 失败，0 跳过** |
-| AndroidJUnitRunner | **4 项通过**，`OK (4 tests)`，`INSTRUMENTATION_CODE: -1` |
+| `testDebugUnitTest` | **46 项通过，0 失败，0 跳过** |
+| AndroidJUnitRunner | **5 项通过**，`OK (5 tests)`，`INSTRUMENTATION_CODE: -1` |
 | `lintDebug` / `lintRelease` | 0 错误；2 个依赖更新提示，保留已验证的固定版本 |
 | Release 构建 | 成功，独立 Release 密钥签名 |
 | `apksigner verify --verbose` | 1 个签名者，APK v2 签名验证通过 |
 | `zipalign -c -P 16 -v 4` | 验证成功，含原生库的通用包按 16KB 对齐 |
 | `sha256sum -c releases/SHA256SUMS` | 通过 |
-| APK manifest | 包名 `com.local.deposittracker`，1.1.0，minSdk 26，targetSdk 37，无 INTERNET、存储、通知或其他敏感权限 |
+| APK manifest | 包名 `com.local.deposittracker`，1.2.0，minSdk 26，targetSdk 37，无 INTERNET、存储、通知或其他敏感权限 |
 | APK 架构 | arm64-v8a、armeabi-v7a、x86、x86_64 |
 | 正式 APK 安装 | Android 15 / API 35 的无 GMS AOSP 模拟器，`pm install` 返回 Success |
-| 正式 APK 覆盖升级 | 1.0.0 → 1.1.0，`pm install -r` 返回 Success，相同签名 |
+| 正式 APK 覆盖升级 | 1.1.0 → 1.2.0，`pm install -r` 返回 Success，相同签名，旧账户 10 万元余额保留 |
 | 正式 APK 冷启动 | `am start -W` 返回 Status: ok，MainActivity 正常启动，非 Debuggable |
 
 manifest 仅有 AndroidX 动态接收器所需的应用自定义签名级权限，不向其他应用开放，不赋予联网能力。
 
 原始记录：[JVM 测试](validation/unit-tests.xml)、[Android 测试](validation/android-tests.txt)、[Release lint](validation/lint-release.txt)、[正式包覆盖安装](validation/release-install.txt)。APK 校验值在 [SHA256SUMS](../releases/SHA256SUMS)。
+
+本次首页 KPI 已验证显示“今日预计收入”，日期选择器和按月字段显示规则也在原生 UI 测试中实际验证。
 
 ## 业务覆盖
 
@@ -38,14 +40,17 @@ manifest 仅有 AndroidX 动态接收器所需的应用自定义签名级权限�
 - CSV BOM、中文、引号 / 逗号 / 多行备注、公式注入保护、重复跳过、错误行号、历史重复回款防护。
 - 日历仅展示截至今天的实际流水，未来月份为空。
 
+新增覆盖：默认负余额、投资前跨银行转账及删除撤销、账户批量合并 / 清空、每日预计利息、六类流水图片与完整 CSV / JSON 往返。
+
 ## Android 原生测试
 
 1. Room 事务余额不足时整体回滚，并验证 JSON 保存 / 恢复。
 2. 真正关闭再打开磁盘数据库，余额及所有字段保持一致。
-3. 旧数据库 1→2 迁移保留工资结余规则、执行日期、金额与流水。
-4. 首次欢迎 → 创建 10 万元活期 → 创建 5 万元定期 → 验证总资产不变 → 月 / 年日历 → 全部流水 → 存款详情 / 转存历史 → 六个入口 / 创建及删除月存规则 / 账户选择 → 设置备份入口。
+3. 旧数据库 1→2→3 迁移保留工资结余规则、执行日期、金额与流水，图片字段默认为空列表。
+4. 真实 PNG 图片通过 Room、JSON 和完整 CSV 往返后仍能解码。
+5. 首次欢迎 → 创建 10 万元活期 → 创建 5 万元定期 → 验证总资产不变 → 月 / 年日历 → 全部流水 → 存款详情 / 转存历史 → 六个入口 / 创建及删除月存规则 / 账户选择 → 设置备份入口。
 
-云机器没有 KVM，采用无 GMS AOSP x86_64 API 35 软件模拟器。初次高分辨率运行出现系统 UI 卡顿，降低为 540×960 / 210dpi 并关闭模拟器动画后完成全部测试。最初 UI 测试没有滚动到屏幕外的 LazyColumn 卡片，已修正为明确滚动后验证；本次系统冷启动导致测试进程加载超时，使用 `cmd package compile -m speed -f` 预编译应用及测试包后重跑。最终结果是四项实际执行且全部通过，没有跳过断言。
+云机器没有 KVM，采用无 GMS AOSP x86_64 API 35 软件模拟器。初次高分辨率运行出现系统 UI 卡顿，降低为 540×960 / 210dpi 并关闭模拟器动画后完成全部测试。最初 UI 测试没有滚动到屏幕外的 LazyColumn 卡片，已修正为明确滚动后验证；本次运行未使用预编译。最终结果是五项实际执行且全部通过，没有跳过断言。
 
 原生 ADB 试图写入只读用户目录，测试使用 `adb-shell==0.4.4` 的本地 TCP 连接，通过 `scripts/emulator-tests.py` 安装 APK（软件模拟器可加 `--precompile`） 并运行 AndroidJUnitRunner。这是开发环境连接方式，与应用运行无关。
 
@@ -53,7 +58,7 @@ manifest 仅有 AndroidX 动态接收器所需的应用自定义签名级权限�
 
 - 到期提醒为应用内提示，关闭应用时不发送通知；这符合第一版允许的范围。
 - 未逐一测试华为、小米、OPPO、vivo、荣耀实体机；APK 不依赖 GMS，最低版本由 manifest 和构建检查确认。
-- schema 版本为 2，1→2 迁移保留旧规则和流水，已增加 MigrationTest；禁止破坏性迁移。
+- schema 版本为 3，1→3 迁移保留旧规则和流水，已增加 MigrationTest；禁止破坏性迁移。
 - GitHub Actions 已配置；本地通过不等于远端 CI 的运行结果。
 - 签名密钥保存在当前云实例的 `/workspace/private/`（Git 仓库之外），未上传 GitHub；后续覆盖升级需保留相同密钥。
 - 安装 / 启动配置已保存为云环境草稿；发布或在新任务恢复的结果需由平台另行确认。

@@ -35,7 +35,7 @@ if args.precompile:
         result = device.shell("cmd package compile -m speed -f " + package,
             transport_timeout_s=600, read_timeout_s=600, timeout_s=600)
         assert "Success" in result, result
-print("Running 4 Android tests", flush=True)
+print("Running 5 Android tests", flush=True)
 chunks = []
 for chunk in device.streaming_shell("am instrument -w -r com.local.deposittracker.test/androidx.test.runner.AndroidJUnitRunner",
     transport_timeout_s=1800, read_timeout_s=1800):
@@ -43,5 +43,5 @@ for chunk in device.streaming_shell("am instrument -w -r com.local.deposittracke
     print(chunk, end="", flush=True)
 result = "".join(chunks)
 pathlib.Path(args.output).write_text(result)
-assert re.search(r"OK \(4 tests\)", result), "Instrumentation did not pass all 4 expected tests"
+assert re.search(r"OK \(5 tests\)", result), "Instrumentation did not pass all 5 expected tests"
 assert "INSTRUMENTATION_CODE: -1" in result, "Instrumentation did not complete normally"

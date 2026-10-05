@@ -31,11 +31,16 @@ interface LedgerDao {
     @Query("DELETE FROM transactions") suspend fun clearTransactions()
 }
 
-@Database(entities = [Account::class, Deposit::class, MonthlyRule::class, Transaction::class, SettingsRow::class], version = 2, exportSchema = true)
+@Database(entities = [Account::class, Deposit::class, MonthlyRule::class, Transaction::class, SettingsRow::class], version = 3, exportSchema = true)
 abstract class LedgerDatabase : RoomDatabase() {
     abstract fun ledger(): LedgerDao
     companion object {
-        fun open(context: Context): LedgerDatabase = Room.databaseBuilder(context, LedgerDatabase::class.java, "cunqi.db").addMigrations(MIGRATION_1_2).build()
+        fun open(context: Context): LedgerDatabase = Room.databaseBuilder(context, LedgerDatabase::class.java, "cunqi.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                for (table in listOf("deposits", "monthly_rules", "transactions")) db.execSQL("ALTER TABLE $table ADD COLUMN imagesJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE monthly_rules ADD COLUMN kind TEXT NOT NULL DEFAULT 'MONTHLY_DEPOSIT'")

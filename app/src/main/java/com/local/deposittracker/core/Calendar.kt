@@ -14,3 +14,13 @@ fun eventLabel(kind: String): String = when (kind) {
     "ROLLOVER" -> "转存"; "TRANSFER" -> "账户转账"; "FIXED_DEPOSIT_EARLY_WITHDRAW" -> "提前支取"
     "MANUAL_INCOME" -> "外部存入"; "MANUAL_EXPENSE" -> "外部支出"; else -> "手动调整"
 }
+
+/** Estimated allocation only; never posts daily interest into the cash ledger. */
+fun Ledger.dailyInterest(date: LocalDate): List<Pair<Deposit, Long>> = deposits.filter {
+    included(it) && date >= LocalDate.parse(it.startDate) && date < LocalDate.parse(it.settledAt ?: it.endDate)
+}.map { d ->
+    val value = if (d.interestMode == "DAY") java.math.BigDecimal(d.principal).multiply(java.math.BigDecimal(d.annualRateText)).movePointLeft(2)
+        .divide(java.math.BigDecimal(365),0,java.math.RoundingMode.HALF_UP).longValueExact()
+    else java.math.BigDecimal(d.interest()).divide(java.math.BigDecimal(java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(d.startDate),LocalDate.parse(d.endDate))),0,java.math.RoundingMode.HALF_UP).longValueExact()
+    d to value
+}

@@ -41,6 +41,7 @@ data class Deposit(@PrimaryKey val id: String = newId(), val name: String, val i
     val manualMaturityAmount: Long? = null, val sourceAccountId: String, val targetAccountId: String,
     val status: String = "ACTIVE", val parentDepositId: String? = null, val actualMaturityAmount: Long? = null,
     val settledAt: String? = null, val note: String = "", val archived: Boolean = false,
+    @ColumnInfo(defaultValue = "'[]'") val imagesJson: String = "[]",
     val createdAt: String = now(), val updatedAt: String = now()) {
     fun interest(until: LocalDate = LocalDate.parse(endDate)): Long {
         if (interestMode == "MANUAL") return Math.subtractExact(requireNotNull(manualMaturityAmount), principal)
@@ -68,11 +69,13 @@ data class MonthlyRule(@PrimaryKey val id: String = newId(), val name: String, v
     val dayOfMonth: Int, val startDate: String, val endDate: String? = null, val targetAccountId: String,
     val enabled: Boolean = true, val lastProcessedDate: String? = null,
     @ColumnInfo(defaultValue = "'MONTHLY_DEPOSIT'") val kind: String = "MONTHLY_DEPOSIT",
+    @ColumnInfo(defaultValue = "'[]'") val imagesJson: String = "[]",
     val createdAt: String = now(), val updatedAt: String = now())
 
 @Serializable @Entity(tableName = "transactions")
 data class Transaction(@PrimaryKey val id: String = newId(), val type: String, val amount: Long,
     val date: String, val accountId: String, val relatedDepositId: String? = null,
+    @ColumnInfo(defaultValue = "'[]'") val imagesJson: String = "[]",
     val transferGroupId: String? = null, val relatedRuleId: String? = null, val title: String, val note: String = "", val createdAt: String = now())
 
 @Serializable

@@ -60,8 +60,8 @@ class EngineTest {
         val r = rule().copy(startDate = "2026-07-20")
         assertTrue(Engine.settle(state().copy(monthlyRules = listOf(r)), LocalDate.parse("2026-07-31")).transactions.isEmpty())
     }
-    @Test fun insufficientBalanceRequiresExplicitOverride() {
-        throws { Engine.createDeposit(state(3_000_000), deposit(), currentDate = date) }
+    @Test fun negativeBalanceIsAllowedAndAssetsStayConstant() {
+        assertEquals(3_000_000L, Engine.createDeposit(state(3_000_000), deposit(), currentDate = date).total(date))
         assertEquals(-2_000_000L, Engine.createDeposit(state(3_000_000), deposit(), true, date).cash())
     }
     @Test fun earlyWithdrawalUsesActualAmount() {
@@ -216,5 +216,64 @@ class EngineTest {
         assertEquals(s, Engine.settle(s, date))
         assertTrue(s.events(YearMonth.of(2027, 1), date).isEmpty())
         assertEquals(300_000L, Engine.settle(s, LocalDate.parse("2027-01-15")).cash())
+    }
+
+    @Test fun investmentTransferIsAtomicAndReversibleWithNegativeCash() {
+        val original = state(100)
+        val d = deposit(1000).copy(sourceAccountId = "b", targetAccountId = "b")
+        val after = Engine.invest(original, d, "a", date)
+        assertEquals(-900L, after.accounts.first().balance); assertEquals(0L, after.accounts.last().balance)
+        assertEquals(100L, after.total(date)); assertEquals(3, after.transactions.size)
+        val restored = Engine.deleteTransaction(after, after.transactions.first().id)
+        assertEquals(100L, restored.cash()); assertTrue(restored.deposits.isEmpty()); assertTrue(restored.transactions.isEmpty())
+    }
+    @Test fun expenseAndTransferAllowNegativeBalances() {
+        val after = Engine.change(state(0), "a", -100, "MANUAL_EXPENSE", "2026-01-01", "")
+        assertEquals(-100L, after.cash())
+        val moved = Engine.transfer(after, "a", "b", 200, "2026-01-01", "")
+        assertEquals(-100L, moved.total()); assertEquals(-300L, moved.accounts.first().balance)
+    }
+    @Test fun dailyIncomeUsesActualDaysAndStopsAtMaturity() {
+        val s = state().copy(deposits = listOf(yearly()))
+        assertEquals(274L, s.dailyInterest(LocalDate.parse("2025-06-01")).single().second)
+        assertTrue(s.dailyInterest(LocalDate.parse("2026-01-01")).isEmpty())
+        val monthly = state().copy(deposits = listOf(deposit().copy(interestMode="MONTH")))
+        assertEquals(183L, monthly.dailyInterest(date).single().second)
+    }
+    @Test fun accountDeletionMovesNegativeBalancesAndReferences() {
+        val s = Engine.invest(state(100), deposit(1000), currentDate = date).copy(monthlyRules=listOf(rule()))
+        val after = Engine.deleteAccounts(s, setOf("a"), "b")
+        assertEquals(s.total(date), after.total(date)); assertEquals(1, after.accounts.size)
+        assertEquals("b", after.deposits.single().sourceAccountId); assertEquals("b", after.monthlyRules.single().targetAccountId)
+        assertTrue(after.transactions.all { it.accountId == "b" }); BackupCodec.validate(after)
+        throws { Engine.deleteAccounts(s, setOf("a"), null) }
+        assertTrue(Engine.deleteAccounts(s, setOf("a", "b"), null).transactions.isEmpty())
+    }
+    private fun pictureJson(): String = Pictures.encode(listOf(Picture("截图.png", "image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=")))
+    @Test fun jsonAndCompleteCsvRestoreAllSixKindsWithImages() {
+        var s = Engine.change(state(), "a", 123, "MANUAL_INCOME", "2026-01-01", "截图")
+        s = Engine.change(s, "a", -100, "MANUAL_EXPENSE", "2026-01-01", "")
+        s = Engine.transfer(s, "a", "b", 100, "2026-01-01", "")
+        s = Engine.invest(s, deposit(), currentDate=date)
+        s = Engine.settle(s.copy(monthlyRules=listOf(rule(),rule().copy(id="fixed",kind="FIXED_INCOME"))),date)
+        s = s.copy(transactions = s.transactions.map { it.copy(imagesJson=pictureJson()) }, deposits=s.deposits.map { it.copy(imagesJson=pictureJson()) },monthlyRules=s.monthlyRules.map { it.copy(imagesJson=pictureJson()) })
+        assertEquals(s, BackupCodec.parse(BackupCodec.export(s)).ledger())
+        val preview = CsvCodec.preview(CsvCodec.export(s, complete=true), Ledger(), date)
+        assertNotNull(preview.complete); assertEquals(s, CsvCodec.import(Ledger(), preview, true, true, date))
+        Pictures.validate(pictureJson())
+        throws { Pictures.validate(Pictures.encode(listOf(Picture("bad.jpg",base64="eHh4eHh4eHh4eHh4eHh4eA==")))) }
+    }
+    @Test fun csvAssetImageImportPreservesPortableBytes() {
+        val s = state().copy(deposits=listOf(deposit().copy(imagesJson=pictureJson())))
+        val preview = CsvCodec.preview(CsvCodec.export(s), state(), date)
+        assertEquals(pictureJson(), preview.deposits.single().imagesJson)
+    }
+
+    @Test fun attachingToNewRecordDoesNotReplaceUnrelatedMaturityPictures() {
+        val before = state().copy(deposits=listOf(yearly().copy(id="old",imagesJson=pictureJson())))
+        val after = Engine.invest(before, deposit(), currentDate=date)
+        val annotated = Pictures.annotate(before, after, "[]")
+        assertEquals(pictureJson(), annotated.deposits.first().imagesJson)
+        assertEquals(pictureJson(), annotated.transactions.first { it.id == "close:old" }.imagesJson)
     }
 }

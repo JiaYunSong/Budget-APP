@@ -1,11 +1,24 @@
-Android 15 / API 35, AOSP emulator without GMS or KVM.
-1.0.0 signed Release installation: Success
-1.0.0 cold launch: Status: ok; TotalTime: 6612 ms
-1.1.0 signed Release upgrade with pm install -r: Success
-1.1.0 cold launch: Status: ok; TotalTime: 7279 ms
-Both certificates SHA-256: b6082392986fdcb6a41968b4ef661e6c5e405517314a956936a6bc4efc884c6d
-39 JVM tests: passed, 0 skipped, 0 failures, 0 errors
-4 Android tests: OK (4 tests); INSTRUMENTATION_CODE: -1
-APK SHA-256 and 16KB zip alignment: verified
-Final contrast-adjusted APK reinstall: Success; cold launch: Status: ok; TotalTime: 8732 ms
-Final signed Release home screen: validated, balance 0.00; screenshot home-1.1.png
+Success
+
+1.1 install: Success
+
+Starting: Intent { cmp=com.local.deposittracker/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.local.deposittracker/.MainActivity
+TotalTime: 10985
+WaitTime: 11087
+Complete
+
+Old account saved
+1.2 upgrade: Success
+
+Starting: Intent { cmp=com.local.deposittracker/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.local.deposittracker/.MainActivity
+TotalTime: 8420
+WaitTime: 8810
+Complete
+
+['上午好', '总资产', '¥ 100,000.00', '活期 ¥ 100,000.00   ·   定期 ¥ 0.00', '预计收益单列，不计入当前资产', '预计总利息', '¥ 0.00', '今日预计收入', '¥ 0.00', '资产分布', '●', '活期   100.0%', '●', '定期 / 存单   0.0%', '●', '理财 / 其他   0.0%', '存期', '全部账户 · 让积蓄慢慢生长', '首页', '日历', '存款', '我的']

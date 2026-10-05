@@ -10,14 +10,14 @@ data class Backup(val version: Int = 1, val exportedAt: String = now(), val acco
     val deposits: List<Deposit>, val monthlyRules: List<MonthlyRule>, val transactions: List<Transaction>, val settings: Settings) {
     fun ledger(): Ledger = Ledger(accounts, deposits, monthlyRules, transactions, settings)
 }
-data class CsvPreview(val deposits: List<Deposit>, val errors: List<String>, val duplicates: Set<String>, val rowCount: Int)
+data class CsvPreview(val deposits: List<Deposit>, val errors: List<String>, val duplicates: Set<String>, val rowCount: Int, val complete: Backup? = null)
 
 object BackupCodec {
     private val json = Json { prettyPrint = true; encodeDefaults = true }
-    fun export(s: Ledger): String = json.encodeToString(Backup(accounts = s.accounts, deposits = s.deposits,
-        monthlyRules = s.monthlyRules, transactions = s.transactions, settings = s.settings))
+    fun export(s: Ledger): String { validate(s); return json.encodeToString(Backup(accounts = s.accounts, deposits = s.deposits,
+        monthlyRules = s.monthlyRules, transactions = s.transactions, settings = s.settings)) }
     fun parse(text: String): Backup {
-        require(text.length <= 10_000_000) { "备份文件超过 10MB" }
+        require(text.length <= Pictures.MAX_FILE) { "备份文件超过48MB" }
         val b = json.decodeFromString<Backup>(text.removePrefix("\uFEFF"))
         require(b.version == 1) { "不支持此备份版本" }
         validate(b.ledger()); java.time.LocalDateTime.parse(b.exportedAt)
@@ -56,12 +56,15 @@ object BackupCodec {
         }
         require(s.settings.theme in setOf("SYSTEM", "LIGHT", "DARK")) { "主题设置无效" }
         LocalDate.parse(s.settings.firstUsed); s.settings.lastBackup?.let(LocalDate::parse)
+        val allImages = s.deposits.map { it.imagesJson } + s.monthlyRules.map { it.imagesJson } + s.transactions.map { it.imagesJson }
+        require(allImages.fold(0L) { total, item -> total + item.length } <= 16_000_000) { "图片数据总量超过16MB，请减少图片或分批备份" }
+        allImages.forEach(Pictures::validate)
         s.total(); s.expectedInterest()
     }
 }
 
 object CsvCodec {
-    private val header = listOf("名称", "机构", "类型", "本金", "年利率", "开始日期", "结束日期", "预计利息", "预计到期金额", "实际到期金额", "状态", "来源账户", "到期账户", "转存来源", "备注", "ID", "计息方式", "计息月数", "手动到期金额")
+    private val header = listOf("名称", "机构", "类型", "本金", "年利率", "开始日期", "结束日期", "预计利息", "预计到期金额", "实际到期金额", "状态", "来源账户", "到期账户", "转存来源", "备注", "ID", "计息方式", "计息月数", "手动到期金额", "图片Base64", "完整备份Base64")
     private fun escape(s: String): String {
         // Prevent spreadsheet formulas when a bank name or note comes from untrusted input.
         val safe = if (s.trimStart().firstOrNull() in listOf('=', '+', '-', '@')) "'" + s else s
@@ -69,12 +72,14 @@ object CsvCodec {
     }
     private fun unescape(s: String): String = if (s.startsWith("'") && s.drop(1).trimStart().firstOrNull() in listOf('=', '+', '-', '@')) s.drop(1) else s
     fun fingerprint(d: Deposit): String = listOf(d.name, d.principal.toString(), d.startDate, d.endDate).joinToString("\u0000")
-    fun export(s: Ledger): String {
+    fun export(s: Ledger, complete: Boolean = false): String {
         val accounts = s.accounts.associate { it.id to it.name }
-        val lines = s.deposits.map { d -> listOf(d.name, d.institution, d.type, yuan(d.principal), d.annualRateText,
+        val payload = if (complete) java.util.Base64.getEncoder().encodeToString(BackupCodec.export(s).toByteArray(Charsets.UTF_8)) else ""
+        val lines = s.deposits.mapIndexed { index, d -> listOf(d.name, d.institution, d.type, yuan(d.principal), d.annualRateText,
             d.startDate, d.endDate, yuan(d.interest()), yuan(d.maturity()), d.actualMaturityAmount?.let(::yuan) ?: "",
             d.statusLabel(), accounts[d.sourceAccountId] ?: "", accounts[d.targetAccountId] ?: "", d.parentDepositId ?: "", d.note,
-            d.id, d.interestMode, d.months.toString(), d.manualMaturityAmount?.let(::yuan) ?: "") }
+            d.id, d.interestMode, d.months.toString(), d.manualMaturityAmount?.let(::yuan) ?: "", d.imagesJson, if (index == 0) payload else "") }
+            .ifEmpty { if (complete) listOf(List(header.size) { index -> if (header[index] == "完整备份Base64") payload else "" }) else emptyList() }
         return "\uFEFF" + (listOf(header) + lines).joinToString("\r\n") { it.joinToString(",", transform = ::escape) }
     }
     /** RFC 4180 parser: quoted commas, escaped quotes, CRLF and multiline notes. */
@@ -100,10 +105,19 @@ object CsvCodec {
         return result
     }
     fun preview(text: String, s: Ledger, currentDate: LocalDate = LocalDate.now()): CsvPreview {
-        require(text.length <= 10_000_000) { "CSV 文件超过 10MB" }
+        require(text.length <= Pictures.MAX_FILE) { "CSV 文件超过48MB" }
         val rows = rows(text); require(rows.size in 2..10_001) { "CSV 需包含表头和 1–10000 条记录" }
         val h = rows.first(); require(h.distinct().size == h.size) { "CSV 表头不能重复" }
         require(listOf("名称", "本金", "年利率", "开始日期", "结束日期", "来源账户").all { it in h }) { "CSV 缺少必要表头" }
+        if ("完整备份Base64" in h) {
+            val index = h.indexOf("完整备份Base64")
+            val payloads = rows.drop(1).map { it.getOrElse(index) { "" } }.filter { it.isNotBlank() }
+            require(payloads.size <= 1) { "CSV 包含多个完整备份，无法确定恢复内容" }
+            if (payloads.isNotEmpty()) {
+                val backup = BackupCodec.parse(String(java.util.Base64.getDecoder().decode(payloads.single()), Charsets.UTF_8))
+                return CsvPreview(backup.deposits, emptyList(), emptySet(), backup.transactions.size, backup)
+            }
+        }
         val errors = mutableListOf<String>(); val result = mutableListOf<Deposit>(); val duplicates = mutableSetOf<String>()
         val fingerprints = s.deposits.map(::fingerprint).toMutableSet()
         rows.drop(1).forEachIndexed { index, values ->
@@ -120,8 +134,8 @@ object CsvCodec {
                 val d = Deposit(name = get("名称"), institution = get("机构"), type = get("类型").ifBlank { "定期存款" }, principal = money(get("本金")),
                     annualRateText = get("年利率"), startDate = start.toString(), endDate = end.toString(), sourceAccountId = source.id, targetAccountId = target.id,
                     interestMode = get("计息方式").ifBlank { "DAY" }, months = get("计息月数").ifBlank { "3" }.toInt(),
-                    manualMaturityAmount = get("手动到期金额").takeIf { it.isNotBlank() }?.let(::money), note = get("备注"))
-                Engine.validateDeposit(d)
+                    imagesJson = get("图片Base64").ifBlank { "[]" }, manualMaturityAmount = get("手动到期金额").takeIf { it.isNotBlank() }?.let(::money), note = get("备注"))
+                Engine.validateDeposit(d); Pictures.validate(d.imagesJson)
                 if (!fingerprints.add(fingerprint(d))) duplicates += d.id
                 result += d
             } catch (e: Exception) { errors += "第${index + 2}行：${userError(e)}" }
@@ -129,6 +143,7 @@ object CsvCodec {
         return CsvPreview(result, errors, duplicates, rows.size - 1)
     }
     fun import(s: Ledger, preview: CsvPreview, skipDuplicates: Boolean, allowNegative: Boolean, date: LocalDate = LocalDate.now()): Ledger {
+        preview.complete?.let { BackupCodec.validate(it.ledger()); return it.ledger() }
         require(preview.errors.isEmpty()) { "请修正所有错误行后重新导入" }
         var result = s
         for (d in preview.deposits.filter { !skipDuplicates || it.id !in preview.duplicates }) result = Engine.createDeposit(result, d, allowNegative, date)
