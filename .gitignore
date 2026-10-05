@@ -33,3 +33,10 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Reproducible local builds and private signing
+.DS_Store
+captures/
+*.env
+*.pem
+!releases/*.apk
