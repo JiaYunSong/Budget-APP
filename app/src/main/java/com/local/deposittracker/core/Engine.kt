@@ -24,20 +24,22 @@ object Engine {
             date = today(), accountId = a.id, title = "${a.name} · 初始余额"))
     }
     fun change(s: Ledger, id: String, cents: Long, type: String, date: String, note: String): Ledger {
-        require(cents != 0L) { "金额不能为零" }; require(LocalDate.parse(date) <= LocalDate.now()) { "实际流水不能使用未来日期" }
+        require(cents != 0L) { "金额不能为零" }; require(LocalDate.parse(date) <= LocalDate.now() || type == "MANUAL_EXPENSE") { "存入和余额调整不能使用未来日期" }
         require(type in setOf("MANUAL_INCOME", "MANUAL_EXPENSE", "ADJUSTMENT"))
         val a = s.accounts.first { it.id == id }
-        return s.balance(id, cents).record(Transaction(type = type, amount = cents, date = date,
+        val applied = LocalDate.parse(date) <= LocalDate.now()
+        return (if (applied) s.balance(id, cents) else s).record(Transaction(type = type, applied = applied, amount = cents, date = date,
             accountId = id, title = "${a.name} · ${if (type == "ADJUSTMENT") "余额调整" else if (cents > 0) "外部存入" else "外部支出"}", note = note))
     }
-    fun transfer(s: Ledger, from: String, to: String, cents: Long, date: String, note: String): Ledger {
+    fun transfer(s: Ledger, from: String, to: String, cents: Long, date: String, note: String, currentDate: LocalDate = LocalDate.now()): Ledger {
         require(from != to && cents > 0) { "请选择不同账户并填写正数金额" }
-        require(LocalDate.parse(date) <= LocalDate.now()) { "转账不能使用未来日期" }
+        require(s.accounts.any { it.id == from } && s.accounts.any { it.id == to }) { "转账账户不存在" }
+        val applied = LocalDate.parse(date) <= currentDate
         val names = s.accounts.associate { it.id to it.name }
         val group = newId()
-        var result = s.balance(from, -cents).balance(to, cents)
-        result = result.record(Transaction(type = "TRANSFER", transferGroupId = group, amount = -cents, date = date, accountId = from, title = "转出至 ${names[to]}", note = note))
-        return result.record(Transaction(type = "TRANSFER", transferGroupId = group, amount = cents, date = date, accountId = to, title = "转入自 ${names[from]}", note = note))
+        var result = if (applied) s.balance(from, -cents).balance(to, cents) else s
+        result = result.record(Transaction(type = "TRANSFER", applied = applied, transferGroupId = group, amount = -cents, date = date, accountId = from, title = "转出至 ${names[to]}", note = note))
+        return result.record(Transaction(type = "TRANSFER", applied = applied, transferGroupId = group, amount = cents, date = date, accountId = to, title = "转入自 ${names[from]}", note = note))
     }
     fun validateDeposit(d: Deposit) {
         Pictures.validate(d.imagesJson)
@@ -53,21 +55,23 @@ object Engine {
     }
     fun createDeposit(s: Ledger, d: Deposit, allowNegative: Boolean = true, currentDate: LocalDate = LocalDate.now()): Ledger {
         validateDeposit(d)
-        require(LocalDate.parse(d.startDate) <= currentDate) { "不能提前扣除未来定期本金，请在开始日创建" }
+        val applied = LocalDate.parse(d.startDate) <= currentDate
+        require(d.status == "ACTIVE" && d.settledAt == null) { "新增产品必须为未结算状态" }
+        require(s.accounts.any { it.id == d.sourceAccountId }) { "请选择来源账户" }
         require(s.deposits.none { it.id == d.id }) { "产品已存在" }
         require(s.accounts.any { it.id == d.targetAccountId }) { "请选择到期账户" }
         val parent = d.parentDepositId?.let { id -> s.deposits.find { it.id == id } ?: error("转存来源不存在") }
         if (parent != null) require(parent.status == "MATURED") { "只有未转存的已到期产品可以转存" }
-        val result = s.balance(d.sourceAccountId, -d.principal, allowNegative)
-            .copy(deposits = s.deposits.map { if (it.id == parent?.id) it.copy(status = "ROLLED", updatedAt = now()) else it } + d)
-            .record(Transaction(type = if (parent == null) "FIXED_DEPOSIT_CREATE" else "ROLLOVER", amount = -d.principal,
+        val result = (if (applied) s.balance(d.sourceAccountId, -d.principal, allowNegative) else s)
+            .copy(deposits = s.deposits.map { if (it.id == parent?.id) it.copy(status = "ROLLED", updatedAt = now()) else it } + d.copy(status = if (applied) "ACTIVE" else "PLANNED"))
+            .record(Transaction(applied = applied, type = if (parent == null) "FIXED_DEPOSIT_CREATE" else "ROLLOVER", amount = -d.principal,
                 date = d.startDate, accountId = d.sourceAccountId, relatedDepositId = d.id, imagesJson = d.imagesJson, title = if (parent == null) "存入 · ${d.name}" else "转存 · ${d.name}"))
         return settle(result, currentDate)
     }
     fun invest(s: Ledger, d: Deposit, transferFrom: String? = null, currentDate: LocalDate = LocalDate.now()): Ledger {
         var state = s
         if (transferFrom != null) {
-            state = transfer(state, transferFrom, d.sourceAccountId, d.principal, d.startDate, "投资前转账 · ${d.name}")
+            state = transfer(state, transferFrom, d.sourceAccountId, d.principal, d.startDate, "投资前转账 · ${d.name}", currentDate)
             val group = state.transactions.last().transferGroupId
             state = state.copy(transactions = state.transactions.map { if (it.transferGroupId == group) it.copy(relatedDepositId = d.id, imagesJson = d.imagesJson) else it })
         }
@@ -91,7 +95,7 @@ object Engine {
     fun editDeposit(s: Ledger, id: String, name: String, note: String, target: String): Ledger {
         require(name.isNotBlank() && s.accounts.any { it.id == target }) { "请填写名称并选择到期账户" }
         val current = s.deposits.first { it.id == id }
-        require(current.status == "ACTIVE" || target == current.targetAccountId) { "已结算产品不能修改回款账户，以保留实际资金历史" }
+        require(current.status in setOf("ACTIVE", "PLANNED") || target == current.targetAccountId) { "已结算产品不能修改回款账户，以保留实际资金历史" }
         return s.copy(deposits = s.deposits.map { if (it.id == id) it.copy(name = name, note = note, targetAccountId = target, updatedAt = now()) else it })
     }
     fun saveRule(s: Ledger, r: MonthlyRule): Ledger {
@@ -106,7 +110,7 @@ object Engine {
     }
     private fun reverse(s: Ledger, rows: List<Transaction>): Ledger {
         var result = s
-        rows.forEach { result = result.balance(it.accountId, Math.negateExact(it.amount)) }
+        rows.filter { it.applied }.forEach { result = result.balance(it.accountId, Math.negateExact(it.amount)) }
         return result.copy(transactions = result.transactions.filter { t -> rows.none { it.id == t.id } })
     }
     fun deleteRule(s: Ledger, id: String): Ledger = reverse(s, s.transactions.filter { it.relatedRuleId == id })
@@ -160,6 +164,12 @@ object Engine {
     }
     fun settle(input: Ledger, date: LocalDate): Ledger {
         var s = input
+        // Apply scheduled rows once, before processing missed maturities. Cash may be negative.
+        val due = s.transactions.filter { !it.applied && LocalDate.parse(it.date) <= date }.sortedBy { it.date }
+        for (t in due) s = s.balance(t.accountId, t.amount)
+        val dueIds = due.map { it.id }.toSet()
+        s = s.copy(transactions = s.transactions.map { if (it.id in dueIds) it.copy(applied = true) else it },
+            deposits = s.deposits.map { if (it.status == "PLANNED" && LocalDate.parse(it.startDate) <= date) it.copy(status = "ACTIVE", updatedAt = now()) else it })
         // Monthly deposits always precede maturities; lastProcessedDate is a monotonic cursor.
         for (r in input.monthlyRules.filter { it.enabled }) {
             val start = LocalDate.parse(r.startDate)

@@ -31,9 +31,13 @@ object BackupCodec {
         val accountIds = s.accounts.map { it.id }.toSet(); val depositIds = s.deposits.map { it.id }.toSet()
         s.deposits.forEach { d ->
             Engine.validateDeposit(d)
-            require(d.status in setOf("ACTIVE", "MATURED", "ROLLED", "EARLY")) { "产品状态无效" }
-            require((d.status == "ACTIVE") == (d.settledAt == null)) { "结算状态与日期不一致" }
-            require(d.status == "ACTIVE" || (d.actualMaturityAmount != null && d.actualMaturityAmount >= 0)) { "历史产品缺少实际到账金额" }
+            require(d.status in setOf("ACTIVE", "PLANNED", "MATURED", "ROLLED", "EARLY")) { "产品状态无效" }
+            require((d.status in setOf("ACTIVE", "PLANNED")) == (d.settledAt == null)) { "结算状态与日期不一致" }
+            require(d.status in setOf("ACTIVE", "PLANNED") || (d.actualMaturityAmount != null && d.actualMaturityAmount >= 0)) { "历史产品缺少实际到账金额" }
+            if (d.status == "PLANNED") {
+                val purchase = s.transactions.filter { it.relatedDepositId == d.id && it.type in setOf("FIXED_DEPOSIT_CREATE", "ROLLOVER") }
+                require(purchase.size == 1 && !purchase.single().applied && purchase.single().amount == -d.principal && purchase.single().accountId == d.sourceAccountId && purchase.single().date == d.startDate) { "未来定期缺少有效的待执行购买记录" }
+            }
             require(d.sourceAccountId in accountIds && d.targetAccountId in accountIds) { "产品关联的账户不存在" }
             d.settledAt?.let { require(LocalDate.parse(it) >= LocalDate.parse(d.startDate)) }
             var parent = d.parentDepositId; val seen = mutableSetOf(d.id)
@@ -52,6 +56,14 @@ object BackupCodec {
         s.transactions.forEach { t ->
             LocalDate.parse(t.date); require(t.accountId in accountIds) { "流水关联的账户不存在" }
             require(t.type in setOf("FIXED_INCOME", "MANUAL_INCOME", "MANUAL_EXPENSE", "MONTHLY_DEPOSIT", "FIXED_DEPOSIT_CREATE", "FIXED_DEPOSIT_MATURE", "FIXED_DEPOSIT_EARLY_WITHDRAW", "TRANSFER", "ROLLOVER", "ADJUSTMENT")) { "流水类型无效" }
+            if (!t.applied) {
+                require(t.type in setOf("TRANSFER", "MANUAL_EXPENSE", "FIXED_DEPOSIT_CREATE", "ROLLOVER")) { "待执行流水类型无效" }
+                if (t.type == "TRANSFER") {
+                    val pair = s.transactions.filter { it.transferGroupId == t.transferGroupId }
+                    require(t.transferGroupId != null && pair.size == 2 && pair.all { !it.applied && it.date == t.date } && pair.fold(0L) { n, row -> add(n, row.amount) } == 0L) { "未来转账配对不完整" }
+                }
+                if (t.type in setOf("FIXED_DEPOSIT_CREATE", "ROLLOVER")) require(s.deposits.any { it.id == t.relatedDepositId && it.status == "PLANNED" }) { "待购买流水缺少未来定期" }
+            }
             require(t.relatedDepositId == null || t.relatedDepositId in depositIds) { "流水关联的产品不存在" }
         }
         require(s.settings.theme in setOf("SYSTEM", "LIGHT", "DARK")) { "主题设置无效" }
@@ -125,12 +137,11 @@ object CsvCodec {
                 require(values.size == h.size) { "列数与表头不一致" }
                 val m = h.zip(values).toMap(); fun get(key: String) = m[key].orEmpty().trim()
                 // CSV is an asset onboarding format; settled history must use JSON to avoid double-credit.
-                require(get("状态") in listOf("", "进行中", "即将到期")) { "历史已结算产品请使用 JSON 恢复，避免重复回款" }
+                require(get("状态") in listOf("", "进行中", "即将到期", "未来定期")) { "历史已结算产品请使用 JSON 恢复，避免重复回款" }
                 val source = s.accounts.find { it.name == get("来源账户") } ?: error("来源账户不存在，请先创建账户")
                 val target = if (get("到期账户").isBlank()) source else s.accounts.find { it.name == get("到期账户") } ?: error("到期账户不存在")
                 val start = try { LocalDate.parse(get("开始日期")) } catch (_: Exception) { error("开始日期格式错误（YYYY-MM-DD）") }
                 val end = try { LocalDate.parse(get("结束日期")) } catch (_: Exception) { error("结束日期格式错误（YYYY-MM-DD）") }
-                require(start <= currentDate) { "开始日期不能晚于今天" }
                 val d = Deposit(name = get("名称"), institution = get("机构"), type = get("类型").ifBlank { "定期存款" }, principal = money(get("本金")),
                     annualRateText = get("年利率"), startDate = start.toString(), endDate = end.toString(), sourceAccountId = source.id, targetAccountId = target.id,
                     interestMode = get("计息方式").ifBlank { "DAY" }, months = get("计息月数").ifBlank { "3" }.toInt(),

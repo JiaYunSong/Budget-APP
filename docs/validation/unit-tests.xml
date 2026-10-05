@@ -1,52 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.local.deposittracker.core.EngineTest" tests="46" skipped="0" failures="0" errors="0" timestamp="2026-10-05T07:58:05.112Z" hostname="ed0c283f7c29" time="0.16">
+<testsuite name="com.local.deposittracker.core.EngineTest" tests="54" skipped="0" failures="0" errors="0" timestamp="2026-10-05T08:36:55.699Z" hostname="ed0c283f7c29" time="0.209">
   <properties/>
-  <testcase name="dailyIncomeUsesActualDaysAndStopsAtMaturity" classname="com.local.deposittracker.core.EngineTest" time="0.024"/>
-  <testcase name="fixedIncomeRulesAndAccountScopesRemainDistinct" classname="com.local.deposittracker.core.EngineTest" time="0.055"/>
+  <testcase name="dailyIncomeUsesActualDaysAndStopsAtMaturity" classname="com.local.deposittracker.core.EngineTest" time="0.03"/>
+  <testcase name="fixedIncomeRulesAndAccountScopesRemainDistinct" classname="com.local.deposittracker.core.EngineTest" time="0.066"/>
   <testcase name="thirtyFirstClampsToFebruaryAndLeapDay" classname="com.local.deposittracker.core.EngineTest" time="0.003"/>
-  <testcase name="csvHasBomAndSupportsQuotesCommasAndNewlines" classname="com.local.deposittracker.core.EngineTest" time="0.008"/>
-  <testcase name="incomeCanPartiallyRepairExplicitNegativeBalance" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="transferDeletionReversesBothAccounts" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="deletedMonthlyOccurrenceNeverReturns" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="csvHasBomAndSupportsQuotesCommasAndNewlines" classname="com.local.deposittracker.core.EngineTest" time="0.011"/>
+  <testcase name="incomeCanPartiallyRepairExplicitNegativeBalance" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="transferDeletionReversesBothAccounts" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
+  <testcase name="deletedMonthlyOccurrenceNeverReturns" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="transfersDoNotAffectNetAssets" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="accountDeletionMovesNegativeBalancesAndReferences" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
-  <testcase name="negativeBalanceIsAllowedAndAssetsStayConstant" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="futureTransferIsReservedAndCannotFundOtherPlansEarly" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="accountDeletionMovesNegativeBalancesAndReferences" classname="com.local.deposittracker.core.EngineTest" time="0.003"/>
+  <testcase name="negativeBalanceIsAllowedAndAssetsStayConstant" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="csvErrorPointsToRowAndInvalidDate" classname="com.local.deposittracker.core.EngineTest" time="0.003"/>
-  <testcase name="futureStartIsRejected" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="missingTargetFallsBackToSource" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="missingTargetFallsBackToSource" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="monthlyAndManualInterestModes" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
   <testcase name="malformedBackupFailsWithoutChangingSource" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
+  <testcase name="overReservedCashCanBeNegativeAndAccountMergeKeepsPlans" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
   <testcase name="expenseAndTransferAllowNegativeBalances" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="deletingRuleReversesGeneratedContributions" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="futureWithdrawalIsReservedAndDeletionOnlyReleasesReservation" classname="com.local.deposittracker.core.EngineTest" time="0.003"/>
+  <testcase name="deletingRuleReversesGeneratedContributions" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="calendarDoesNotDoubleCountExecutedRules" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="openingTenTimesNeverDuplicates" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
+  <testcase name="openingTenTimesNeverDuplicates" classname="com.local.deposittracker.core.EngineTest" time="0.003"/>
   <testcase name="futureRuleHasNoRecordsAndNoEndLimit" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
   <testcase name="missingBothAccountsCreatesRecoveryAccount" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="investmentTransferIsAtomicAndReversibleWithNegativeCash" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="backupRestoresEveryFieldAndRollover" classname="com.local.deposittracker.core.EngineTest" time="0.005"/>
-  <testcase name="editingPreservesPrincipalAndSettledReturnAccount" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="investmentTransferIsAtomicAndReversibleWithNegativeCash" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="backupRestoresEveryFieldAndRollover" classname="com.local.deposittracker.core.EngineTest" time="0.006"/>
+  <testcase name="editingPreservesPrincipalAndSettledReturnAccount" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
   <testcase name="deletingSpentRuleReportsAccurateNegativeBalance" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="backupRejectsMissingFuturePurchaseAndTransferPartner" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
   <testcase name="accruedIsCappedAndOptIn" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
   <testcase name="earlyWithdrawalCannotCreditFutureMoney" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="rolloverPreservesLifecycleAndAssets" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="jsonAndCompleteCsvRestoreAllSixKindsWithImages" classname="com.local.deposittracker.core.EngineTest" time="0.017"/>
-  <testcase name="ruleEndDateIsInclusive" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="jsonAndCompleteCsvRestoreAllSixKindsWithImages" classname="com.local.deposittracker.core.EngineTest" time="0.026"/>
+  <testcase name="ruleEndDateIsInclusive" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="csvDuplicatesCanBeSkippedOrIncluded" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
-  <testcase name="csvFormulaInjectionIsEscapedAndRestoresOriginal" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="futureInvestmentTransferReservesOnlyOriginalBank" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="csvFormulaInjectionIsEscapedAndRestoresOriginal" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
+  <testcase name="cancellingFutureDepositDoesNotChangeBalance" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
   <testcase name="csvAssetImageImportPreservesPortableBytes" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
-  <testcase name="maturityAddsOnlyInterest" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="actualDaysExample" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="creationPreservesAssets" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="maturityAddsOnlyInterest" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="futurePlansRoundTripInBackupsAndOldCsv" classname="com.local.deposittracker.core.EngineTest" time="0.006"/>
+  <testcase name="actualDaysExample" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="missedFutureStartAndMaturityCatchUpTogether" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="futureDepositReservesWithoutDeductingAndExecutesOnlyOnce" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="creationPreservesAssets" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="deletingInvestmentReversesMaturityAndDescendants" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="ruleStartsAfterDueDate" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="excludedAccountAlsoExcludesItsDeposits" classname="com.local.deposittracker.core.EngineTest" time="0.012"/>
-  <testcase name="amountsRejectFloatingPrecisionAndOverflow" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="ruleStartsAfterDueDate" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="excludedAccountAlsoExcludesItsDeposits" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="amountsRejectFloatingPrecisionAndOverflow" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
   <testcase name="csvImportDoesNotSilentlyRecreditHistoricalAssets" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
   <testcase name="attachingToNewRecordDoesNotReplaceUnrelatedMaturityPictures" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="earlyWithdrawalUsesActualAmount" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="yearlyInterestIsExact" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
-  <testcase name="clockRollbackPreservesSettlements" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
-  <testcase name="monthlyCatchesUpThreeMonths" classname="com.local.deposittracker.core.EngineTest" time="0.002"/>
+  <testcase name="earlyWithdrawalUsesActualAmount" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="yearlyInterestIsExact" classname="com.local.deposittracker.core.EngineTest" time="0.0"/>
+  <testcase name="clockRollbackPreservesSettlements" classname="com.local.deposittracker.core.EngineTest" time="0.001"/>
+  <testcase name="monthlyCatchesUpThreeMonths" classname="com.local.deposittracker.core.EngineTest" time="0.004"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

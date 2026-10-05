@@ -45,7 +45,7 @@ fun cashEditor(s: Ledger, direction: String = "IN", date: String = today()): Edi
 }
 fun transferEditor(s: Ledger, date: String = today()): Editor = Editor("账户间转账", listOf(accountField("from", "转出账户", s),
     accountField("to", "转入账户", s, s.accounts.getOrNull(1)?.id.orEmpty()), Field("amount", "金额（元）*", numeric = true),
-    Field("date", "日期", date), Field("note", "备注")), "转账只移动资产，不计入外部收入或支出。") { v, state ->
+    Field("date", "日期", date), Field("note", "备注")), "转账只移动资产，不计入外部收入或支出。未来转账先预留转出账户资金，到日打开应用执行。") { v, state ->
     Engine.transfer(state, v.getValue("from"), v.getValue("to"), money(v.getValue("amount")), v.getValue("date"), v["note"].orEmpty())
 }
 fun depositEditor(s: Ledger, parent: Deposit? = null, date: String = today()): Editor {
@@ -61,7 +61,7 @@ fun depositEditor(s: Ledger, parent: Deposit? = null, date: String = today()): E
         accountField("source", "购买投资的银行账户 *", s, source), accountField("target", "到期账户（默认来源账户）", s, source),
         Field("pretransfer", "购买前从其他账户转账", "false", boolean),
         accountField("transferFrom", "转账来源银行账户", s, source), Field("note", "备注")),
-        "允许负余额，购买及账户间转账不会改变合计总资产。勾选转账时，先转入购买银行账户再扣除本金。到期后回款至指定账户。已开始产品的本金、日期和利率不可直接修改。历史已到期产品会立即结算。") { v, state ->
+        "允许负余额；未来开始的产品先标为“未来定期”，预留活期并在开始日打开应用时扣款。购买及账户间转账不会改变合计总资产。勾选转账时，先转入购买银行账户再扣除本金。到期后回款至指定账户。已开始产品的本金、日期和利率不可直接修改。历史已到期产品会立即结算。") { v, state ->
         Engine.invest(state, Deposit(name = v.getValue("name"), institution = v["bank"].orEmpty().ifBlank { state.accounts.first { it.id == v["source"] }.name }, type = v.getValue("type"),
             principal = money(v.getValue("principal")), annualRateText = v.getValue("rate"), startDate = v.getValue("start"), endDate = v.getValue("end"),
             interestMode = v.getValue("mode"), months = if (v["mode"] == "MONTH") v.getValue("months").toInt() else 3, manualMaturityAmount = if (v["mode"] == "MANUAL") money(v.getValue("manual")) else null,
@@ -69,7 +69,7 @@ fun depositEditor(s: Ledger, parent: Deposit? = null, date: String = today()): E
     }
 }
 fun editDepositEditor(s: Ledger, d: Deposit): Editor = Editor("编辑产品信息", listOf(Field("name", "产品名称", d.name)) +
-    (if (d.status == "ACTIVE") listOf(accountField("target", "到期账户", s, d.targetAccountId)) else emptyList()) + Field("note", "备注", d.note),
+    (if (d.status in setOf("ACTIVE", "PLANNED")) listOf(accountField("target", "到期账户", s, d.targetAccountId)) else emptyList()) + Field("note", "备注", d.note),
     "本金、开始日期及计息条件已锁定。已结算产品仅允许修改名称和备注，以保护实际回款历史。", images = d.imagesJson) { v, state ->
     Engine.editDeposit(state, d.id, v.getValue("name"), v["note"].orEmpty(), v["target"] ?: d.targetAccountId).let { edited -> edited.copy(deposits = edited.deposits.map { if (it.id == d.id) it.copy(imagesJson = v["images"] ?: d.imagesJson) else it }) }
 }
@@ -117,7 +117,7 @@ fun EditorDialog(editor: Editor, busy: Boolean, close: () -> Unit, save: (Map<St
         val initial = values[field.key]?.takeIf { it.isNotBlank() }?.let(LocalDate::parse) ?: LocalDate.now()
         val picker = rememberDatePickerState(initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
             selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean = field.key == "end" || editor.title.contains("月存") || editor.title.contains("固定收入") || Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate() <= LocalDate.now()
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = field.key == "end" || field.key == "start" || editor.title == "账户间转账" || (editor.title in listOf("一次性取款", "一次性存款") && values["kind"] == "OUT") || editor.title.contains("月存") || editor.title.contains("固定收入") || Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate() <= LocalDate.now()
             })
         DatePickerDialog(onDismissRequest = { pickingDate = null }, confirmButton = { TextButton(enabled = picker.selectedDateMillis != null, onClick = {
             values[field.key] = Instant.ofEpochMilli(requireNotNull(picker.selectedDateMillis)).atZone(ZoneOffset.UTC).toLocalDate().toString(); pickingDate = null

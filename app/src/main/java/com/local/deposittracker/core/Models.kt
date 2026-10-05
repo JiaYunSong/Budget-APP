@@ -59,7 +59,7 @@ data class Deposit(@PrimaryKey val id: String = newId(), val name: String, val i
     fun maturity(): Long = add(principal, interest())
     fun days(date: LocalDate = LocalDate.now()): Long = ChronoUnit.DAYS.between(date, LocalDate.parse(endDate))
     fun statusLabel(date: LocalDate = LocalDate.now()): String = when (status) {
-        "MATURED" -> "已到期"; "ROLLED" -> "已转存"; "EARLY" -> "已提前支取"
+        "PLANNED" -> "未来定期"; "MATURED" -> "已到期"; "ROLLED" -> "已转存"; "EARLY" -> "已提前支取"
         else -> if (days(date) in 1..30) "即将到期" else "进行中"
     }
 }
@@ -76,6 +76,7 @@ data class MonthlyRule(@PrimaryKey val id: String = newId(), val name: String, v
 data class Transaction(@PrimaryKey val id: String = newId(), val type: String, val amount: Long,
     val date: String, val accountId: String, val relatedDepositId: String? = null,
     @ColumnInfo(defaultValue = "'[]'") val imagesJson: String = "[]",
+    @ColumnInfo(defaultValue = "1") val applied: Boolean = true,
     val transferGroupId: String? = null, val relatedRuleId: String? = null, val title: String, val note: String = "", val createdAt: String = now())
 
 @Serializable
@@ -88,10 +89,17 @@ data class Ledger(val accounts: List<Account> = emptyList(), val deposits: List<
     val monthlyRules: List<MonthlyRule> = emptyList(), val transactions: List<Transaction> = emptyList(),
     val settings: Settings = Settings()) {
     fun active(): List<Deposit> = deposits.filter { it.status == "ACTIVE" }
+    /** Reserve outgoing plans; an investment's same-day incoming transfer offsets its purchase. */
+    fun reserved(accountId: String? = null): Long = transactions.filter { !it.applied && (accountId == null || it.accountId == accountId) && accounts.any { a -> a.id == it.accountId && (accountId != null || a.includeInTotal) } }
+        .groupBy { it.accountId to (it.relatedDepositId ?: it.transferGroupId ?: it.id) }.values.fold(0L) { n, rows ->
+            add(n, Math.negateExact(rows.fold(0L) { sum, t -> add(sum, t.amount) }.coerceAtMost(0)))
+        }
+    fun futureDeposits(accountId: String? = null): Long = copy(transactions = transactions.filter { it.relatedDepositId != null }).reserved(accountId)
+    fun availableCash(): Long = Math.subtractExact(cash(), reserved())
     fun cash(): Long = accounts.filter { it.includeInTotal }.fold(0L) { n, a -> add(n, a.balance) }
     fun principal(): Long = active().filter { included(it) }.fold(0L) { n, d -> add(n, d.principal) }
     fun included(d: Deposit): Boolean = accounts.find { it.id == d.sourceAccountId }?.includeInTotal ?: true
-    fun expectedInterest(): Long = active().filter { included(it) }.fold(0L) { n, d -> add(n, d.interest()) }
+    fun expectedInterest(): Long = deposits.filter { it.status in setOf("ACTIVE", "PLANNED") }.filter { included(it) }.fold(0L) { n, d -> add(n, d.interest()) }
     fun total(date: LocalDate = LocalDate.now()): Long = add(add(cash(), principal()),
         if (settings.includeAccruedInterest) active().filter { included(it) && it.interestMode == "DAY" }.fold(0L) { n, d -> add(n, d.interest(date)) } else 0)
 }

@@ -103,7 +103,68 @@ class EngineTest {
         val s = Engine.createDeposit(state().copy(accounts = state().accounts.map { it.copy(includeInTotal = false) }), deposit(), currentDate = date)
         assertEquals(0L, s.total())
     }
-    @Test fun futureStartIsRejected() { throws { Engine.createDeposit(state(), deposit().copy(startDate = "2026-11-01"), currentDate = date) } }
+    @Test fun futureDepositReservesWithoutDeductingAndExecutesOnlyOnce() {
+        val start = date.plusDays(10)
+        val s = Engine.createDeposit(state(), deposit().copy(startDate = start.toString()), currentDate = date)
+        assertEquals("PLANNED", s.deposits.single().status)
+        assertEquals(10_000_000L, s.cash()); assertEquals(0L, s.principal()); assertEquals(10_000_000L, s.total(date))
+        assertEquals(5_000_000L, s.futureDeposits()); assertEquals(5_000_000L, s.availableCash())
+        assertTrue(s.events(YearMonth.from(start), start).isEmpty()); assertTrue(s.dailyInterest(date).isEmpty())
+        assertEquals(s, Engine.settle(s, start.minusDays(1)))
+        val actual = Engine.settle(s, start)
+        assertEquals(5_000_000L, actual.cash()); assertEquals(5_000_000L, actual.principal()); assertEquals(0L, actual.reserved())
+        assertEquals(10_000_000L, actual.total(start)); assertEquals("ACTIVE", actual.deposits.single().status)
+        assertEquals(1, actual.events(YearMonth.from(start), start).size)
+        assertEquals(actual, Engine.settle(actual, start))
+    }
+    @Test fun cancellingFutureDepositDoesNotChangeBalance() {
+        val s = Engine.createDeposit(state(), deposit().copy(startDate = "2026-11-01"), currentDate = date)
+        val cancelled = Engine.deleteTransaction(s, s.transactions.single().id)
+        assertEquals(state().cash(), cancelled.cash()); assertEquals(0L, cancelled.reserved()); assertTrue(cancelled.deposits.isEmpty())
+        assertEquals(cancelled, Engine.settle(cancelled, LocalDate.parse("2027-02-01")))
+    }
+    @Test fun futureInvestmentTransferReservesOnlyOriginalBank() {
+        val start = date.plusDays(10)
+        val s = Engine.invest(state(), deposit().copy(startDate = start.toString(), sourceAccountId = "b", targetAccountId = "b"), "a", date)
+        assertEquals(10_000_000L, s.cash()); assertEquals(5_000_000L, s.reserved("a")); assertEquals(0L, s.reserved("b"))
+        assertEquals(5_000_000L, s.reserved()); assertEquals(5_000_000L, s.futureDeposits()); assertEquals(0L, s.scoped(setOf("b")).reserved())
+        val actual = Engine.settle(s, start)
+        assertEquals(5_000_000L, actual.accounts[0].balance); assertEquals(0L, actual.accounts[1].balance)
+        assertEquals(10_000_000L, actual.total(start)); assertTrue(actual.transactions.all { it.applied })
+        assertEquals(10_000_000L, Engine.deleteTransaction(actual, actual.transactions.first().id).cash())
+        assertEquals(10_000_000L, Engine.deleteTransaction(s, s.transactions.first().id).cash())
+    }
+    @Test fun futureTransferIsReservedAndCannotFundOtherPlansEarly() {
+        val start = date.plusDays(10)
+        val s = Engine.transfer(state(), "a", "b", 2_000_000, start.toString(), "未来转出", date)
+        assertEquals(10_000_000L, s.cash()); assertEquals(8_000_000L, s.availableCash()); assertEquals(0L, s.futureDeposits())
+        assertEquals(0L, s.reserved("b")); assertEquals(10_000_000L, Engine.deleteTransaction(s, s.transactions.first().id).cash())
+        val after = Engine.settle(s, start)
+        assertEquals(8_000_000L, after.accounts[0].balance); assertEquals(2_000_000L, after.accounts[1].balance)
+        assertEquals(after, Engine.settle(after, start))
+    }
+    @Test fun missedFutureStartAndMaturityCatchUpTogether() {
+        val s = Engine.createDeposit(state(), deposit().copy(startDate = "2026-11-01"), currentDate = date)
+        val end = LocalDate.parse("2027-01-05"); val after = Engine.settle(s, end.plusDays(30))
+        assertEquals("MATURED", after.deposits.single().status); assertEquals(0L, after.reserved())
+        assertEquals(add(10_000_000L, s.deposits.single().interest()), after.total(end))
+        assertEquals(after, Engine.settle(after, end.plusDays(30)))
+    }
+    @Test fun futurePlansRoundTripInBackupsAndOldCsv() {
+        val s = Engine.createDeposit(state(), deposit().copy(startDate = "2026-11-01"), currentDate = date)
+        assertEquals(s, BackupCodec.parse(BackupCodec.export(s)).ledger())
+        assertEquals(s, CsvCodec.preview(CsvCodec.export(s, complete = true), state(), date).complete!!.ledger())
+        val preview = CsvCodec.preview(CsvCodec.export(s), state(), date)
+        assertTrue(preview.errors.isEmpty()); val imported = CsvCodec.import(state(), preview, true, true, date)
+        assertEquals(10_000_000L, imported.cash()); assertEquals(5_000_000L, imported.reserved())
+    }
+    @Test fun overReservedCashCanBeNegativeAndAccountMergeKeepsPlans() {
+        val s = Engine.createDeposit(state(100), deposit().copy(startDate = "2026-11-01"), currentDate = date)
+        assertEquals(-4_999_900L, s.availableCash())
+        val merged = Engine.deleteAccounts(s, setOf("a"), "b")
+        assertEquals(100L, merged.cash()); assertEquals(5_000_000L, merged.reserved("b"))
+        assertEquals(100L, Engine.settle(merged, LocalDate.parse("2026-11-01")).total())
+    }
     @Test fun earlyWithdrawalCannotCreditFutureMoney() {
         val s = Engine.createDeposit(state(), deposit(), currentDate = date)
         throws { Engine.earlyWithdraw(s, "d", 5_003_500, "2026-11-01", date) }
@@ -276,4 +337,19 @@ class EngineTest {
         assertEquals(pictureJson(), annotated.deposits.first().imagesJson)
         assertEquals(pictureJson(), annotated.transactions.first { it.id == "close:old" }.imagesJson)
     }
+    @Test fun futureWithdrawalIsReservedAndDeletionOnlyReleasesReservation() {
+        val start = LocalDate.now().plusDays(10)
+        val s = Engine.change(state(), "a", -200_000, "MANUAL_EXPENSE", start.toString(), "未来取款")
+        assertEquals(10_000_000L, s.cash()); assertEquals(200_000L, s.reserved()); assertEquals(9_800_000L, s.availableCash())
+        assertEquals(s, BackupCodec.parse(BackupCodec.export(s)).ledger())
+        assertEquals(10_000_000L, Engine.deleteTransaction(s, s.transactions.single().id).cash())
+        assertEquals(9_800_000L, Engine.settle(s, start).cash())
+    }
+    @Test fun backupRejectsMissingFuturePurchaseAndTransferPartner() {
+        val s = Engine.createDeposit(state(), deposit().copy(startDate = "2026-11-01"), currentDate = date)
+        throws { BackupCodec.export(s.copy(transactions = emptyList())) }
+        val transfer = Engine.transfer(state(), "a", "b", 100, "2026-11-01", "", date)
+        throws { BackupCodec.export(transfer.copy(transactions = transfer.transactions.take(1))) }
+    }
+
 }

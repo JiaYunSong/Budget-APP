@@ -1,24 +1,15 @@
+Future home screenshot captured from Android UI test
 Success
 
-1.1 install: Success
+Success
+
+Success
 
 Starting: Intent { cmp=com.local.deposittracker/.MainActivity }
 Status: ok
 LaunchState: COLD
 Activity: com.local.deposittracker/.MainActivity
-TotalTime: 10985
-WaitTime: 11087
+TotalTime: 7541
+WaitTime: 7635
 Complete
 
-Old account saved
-1.2 upgrade: Success
-
-Starting: Intent { cmp=com.local.deposittracker/.MainActivity }
-Status: ok
-LaunchState: COLD
-Activity: com.local.deposittracker/.MainActivity
-TotalTime: 8420
-WaitTime: 8810
-Complete
-
-['上午好', '总资产', '¥ 100,000.00', '活期 ¥ 100,000.00   ·   定期 ¥ 0.00', '预计收益单列，不计入当前资产', '预计总利息', '¥ 0.00', '今日预计收入', '¥ 0.00', '资产分布', '●', '活期   100.0%', '●', '定期 / 存单   0.0%', '●', '理财 / 其他   0.0%', '存期', '全部账户 · 让积蓄慢慢生长', '首页', '日历', '存款', '我的']

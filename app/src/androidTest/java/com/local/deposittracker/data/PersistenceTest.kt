@@ -20,9 +20,16 @@ class PersistenceTest {
         try {
             val repo = LedgerRepository(db)
             repo.update { Engine.createAccount(it, "重启测试", 123456, true, "精确到分") }
-            val before = repo.snapshot(); db.close()
+            val account = repo.snapshot().accounts.single().id
+            val start = LocalDate.now().plusDays(10)
+            repo.update { Engine.createDeposit(it, Deposit(name = "未来定期", principal = 50000, annualRateText = "2", startDate = start.toString(), endDate = start.plusMonths(3).toString(), sourceAccountId = account, targetAccountId = account)) }
+            val before = repo.snapshot(); assertEquals(123456L, before.cash()); assertEquals(50000L, before.reserved())
+            db.close()
             db = Room.databaseBuilder(context, LedgerDatabase::class.java, name).build()
-            assertEquals(before, LedgerRepository(db).snapshot())
+            val reopened = LedgerRepository(db)
+            assertEquals(before, reopened.snapshot())
+            reopened.update { Engine.settle(it, start) }
+            assertEquals(73456L, reopened.snapshot().cash()); assertEquals(0L, reopened.snapshot().reserved())
         } finally { db.close(); context.deleteDatabase(name) }
     }
     @Test fun atomicUpdatesRollbackAndSnapshotRoundTrip() = runTest {

@@ -67,5 +67,35 @@ class AppFlowTest {
         ui.onNodeWithText("我的", useUnmergedTree = true).performClick()
         waitText("导出完整备份（JSON）")
         ui.onNodeWithText("导出完整备份（JSON）").assertExists()
+        // A future calendar day initializes the picker to a selectable future start date.
+        ui.onNodeWithText("日历", useUnmergedTree = true).performClick()
+        waitText("月视图"); ui.onNodeWithText("月视图").performClick()
+        ui.onNode(hasScrollToNodeAction()).performScrollToNode(hasContentDescription("下一期"))
+        ui.onNodeWithContentDescription("下一期").performClick()
+        ui.onNodeWithText("新增流水").performClick()
+        ui.onNodeWithText("投资").performClick()
+        fill("产品名称 *", "未来定期测试"); fill("本金（元）*", "25000")
+        val future = LocalDate.now().withDayOfMonth(1).plusMonths(1)
+        ui.onNodeWithText(future.toString()).performScrollTo().performClick()
+        waitText("确定日期"); ui.onNodeWithText("确定日期").assertIsEnabled().performClick()
+        ui.onNodeWithText("保存").performClick()
+        ui.waitUntil(90_000) { ui.onAllNodesWithText("新增定期 / 固定收益").fetchSemanticsNodes().isEmpty() }
+        ui.onNodeWithText("首页", useUnmergedTree = true).performClick()
+        ui.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("总资产"))
+        waitText("可用活期 ¥ 25,000.00")
+        ui.onNodeWithText("未来定期 ¥ 25,000.00 · 未来转出 ¥ 0.00").assertExists()
+        ui.onNodeWithText("当前活期 ¥ 50,000.00   ·   定期 ¥ 50,000.00").assertExists()
+        ui.onAllNodesWithText("¥ 100,000.00").onFirst().assertExists()
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+            java.io.File(ui.activity.cacheDir, "future-home.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        ui.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("取消计划 / 释放预留"))
+        ui.onNodeWithText("取消计划 / 释放预留").performClick()
+        waitText("确认删除"); ui.onNodeWithText("确认删除").performClick()
+        ui.waitUntil(90_000) { ui.onAllNodesWithText("确认删除").fetchSemanticsNodes().isEmpty() }
+        ui.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("总资产"))
+        ui.onNodeWithText("未来定期 ¥ 25,000.00 · 未来转出 ¥ 0.00").assertDoesNotExist()
+        ui.onNodeWithText("当前活期 ¥ 50,000.00   ·   定期 ¥ 50,000.00").assertExists()
+        ui.onAllNodesWithText("¥ 100,000.00").onFirst().assertExists()
     }
 }
